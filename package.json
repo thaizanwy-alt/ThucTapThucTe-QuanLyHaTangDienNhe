@@ -1,0 +1,10 @@
+{
+  "name": "electrical-infrastructure-management",
+  "private": true,
+  "workspaces": ["frontend", "backend"],
+  "scripts": {
+    "dev:frontend": "npm run dev -w frontend",
+    "dev:backend": "npm run start:dev -w backend",
+    "build": "npm run build -w frontend && npm run build -w backend"
+  }
+}

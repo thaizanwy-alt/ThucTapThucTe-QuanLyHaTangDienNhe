@@ -1,0 +1,4 @@
+:root { font-family: system-ui, sans-serif; color: #182330; background: #f5f7fa; }
+body { margin: 0; min-height: 100vh; display: grid; place-items: center; }
+main { background: white; padding: 2rem 3rem; border-radius: 12px; box-shadow: 0 8px 30px #18233012; }
+h1 { margin-top: 0; }
