@@ -3,9 +3,9 @@
 Yêu cầu: Node.js 20.19+ và PostgreSQL đang chạy.
 
 1. Tạo database PostgreSQL tên `electrical_infrastructure` (hoặc đổi `DB_NAME`).
-2. Sao chép `.env.example` thành `backend/.env`, rồi điền thông tin kết nối và `JWT_SECRET` (ít nhất 32 ký tự). Đặt `DEMO_MANAGER_PASSWORD` và `DEMO_TECHNICIAN_PASSWORD` (mỗi mật khẩu ít nhất 12 ký tự) khi cần chạy seed.
+2. Nếu chưa có `backend/.env`, sao chép từ `.env.example`; nếu đã có, bổ sung biến còn thiếu và giữ nguyên cấu hình local. Điền thông tin kết nối và `JWT_SECRET` (ít nhất 32 ký tự). Đặt `DEMO_MANAGER_PASSWORD` và `DEMO_TECHNICIAN_PASSWORD` (mỗi mật khẩu ít nhất 12 ký tự) khi cần chạy seed.
 3. Chạy `npm install` tại thư mục gốc.
-4. Chạy `npm run migration:run -w backend`, sau đó `npm run seed -w backend` để tạo hai tài khoản demo. Seed chạy lại không tạo trùng; nếu mật khẩu demo trong môi trường thay đổi, seed cập nhật hash của tài khoản tương ứng.
+4. Chạy `npm run migration:run -w backend`, sau đó `npm run seed -w backend` để tạo hai tài khoản demo. Seed chạy lại không tạo trùng; nếu mật khẩu demo trong môi trường thay đổi, seed cập nhật hash của tài khoản tương ứng. Seed cũng khôi phục vai trò tương ứng và trạng thái active của hai tài khoản demo.
 5. Mở hai terminal: `npm run dev:backend` và `npm run dev:frontend`.
 6. Mở địa chỉ Vite in ra terminal (thường là http://localhost:5173); kiểm tra API tại http://localhost:3000/health.
 
@@ -16,3 +16,5 @@ Yêu cầu: Node.js 20.19+ và PostgreSQL đang chạy.
 Các route cần phân quyền về sau dùng `@UseGuards(JwtAuthGuard, RolesGuard)` cùng `@Roles(UserRole.MANAGER)` hoặc `@Roles(UserRole.TECHNICIAN)`; import `AuthModule` vào module chứa route. Chạy `npm run test -w backend` để kiểm tra guard.
 
 Frontend mặc định gọi API tại `http://localhost:3000`; có thể đặt `VITE_API_URL` trong `frontend/.env.local` theo `frontend/.env.example` rồi khởi động lại Vite. Không đặt mật khẩu hoặc `JWT_SECRET` trong biến `VITE_*`. Phiên demo local dùng localStorage, kiểm tra `/auth/me` khi tải lại và xóa token khi đăng xuất, hết hạn hoặc nhận 401. API chưa có tên người dùng nên giao diện dùng email để nhận diện tài khoản.
+
+Ngữ cảnh bàn giao: [docs/STATUS.md](docs/STATUS.md). Quy ước làm việc với repo: [AGENTS.md](AGENTS.md).
