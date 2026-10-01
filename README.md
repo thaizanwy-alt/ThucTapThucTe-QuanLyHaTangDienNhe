@@ -14,3 +14,5 @@ Yêu cầu: Node.js 20.19+ và PostgreSQL đang chạy.
 `POST /auth/login` nhận JSON `{"email":"manager.demo@example.local","password":"..."}` và trả `accessToken`. Gửi `Authorization: Bearer <accessToken>` tới `GET /auth/me`. Tài khoản còn lại có email `technician.demo@example.local`; có thể đổi hai email qua biến môi trường. TypeORM giữ `synchronize: false`; bảng `users` chỉ tạo bởi migration.
 
 Các route cần phân quyền về sau dùng `@UseGuards(JwtAuthGuard, RolesGuard)` cùng `@Roles(UserRole.MANAGER)` hoặc `@Roles(UserRole.TECHNICIAN)`; import `AuthModule` vào module chứa route. Chạy `npm run test -w backend` để kiểm tra guard.
+
+Frontend mặc định gọi API tại `http://localhost:3000`; có thể đặt `VITE_API_URL` trong `frontend/.env.local` theo `frontend/.env.example` rồi khởi động lại Vite. Không đặt mật khẩu hoặc `JWT_SECRET` trong biến `VITE_*`. Phiên demo local dùng localStorage, kiểm tra `/auth/me` khi tải lại và xóa token khi đăng xuất, hết hạn hoặc nhận 401. API chưa có tên người dùng nên giao diện dùng email để nhận diện tài khoản.
