@@ -5,14 +5,23 @@
   "scripts": {
     "start:dev": "nest start --watch",
     "start": "node dist/main.js",
-    "build": "nest build"
+    "build": "nest build",
+    "migration:run": "npm run build && typeorm migration:run -d dist/database/data-source.js",
+    "migration:show": "npm run build && typeorm migration:show -d dist/database/data-source.js",
+    "seed": "npm run build && node dist/database/seed.js",
+    "test": "npm run build && node --test test/roles.guard.test.cjs"
   },
   "dependencies": {
     "@nestjs/common": "^11.0.0",
     "@nestjs/config": "^4.0.0",
     "@nestjs/core": "^11.0.0",
+    "@nestjs/jwt": "^12.0.2",
     "@nestjs/platform-express": "^11.0.0",
     "@nestjs/typeorm": "^11.0.0",
+    "bcryptjs": "^3.0.3",
+    "class-transformer": "^0.5.1",
+    "class-validator": "^0.15.1",
+    "dotenv": "^17.4.1",
     "pg": "^8.13.0",
     "reflect-metadata": "^0.2.2",
     "rxjs": "^7.8.0",
@@ -20,6 +29,7 @@
   },
   "devDependencies": {
     "@nestjs/cli": "^11.0.0",
+    "@types/express": "^5.0.6",
     "@types/node": "^22.0.0",
     "typescript": "^5.7.0"
   }

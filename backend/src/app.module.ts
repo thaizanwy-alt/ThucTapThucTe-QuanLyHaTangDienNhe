@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { HealthController } from './health.controller';
+import { AuthModule } from './auth/auth.module';
 
 @Module({
   imports: [
@@ -15,10 +16,13 @@ import { HealthController } from './health.controller';
         username: config.get<string>('DB_USER', 'postgres'),
         password: config.get<string>('DB_PASSWORD', ''),
         database: config.get<string>('DB_NAME', 'electrical_infrastructure'),
+        uuidExtension: 'pgcrypto',
+        installExtensions: false,
         autoLoadEntities: true,
         synchronize: false,
       }),
     }),
+    AuthModule,
   ],
   controllers: [HealthController],
 })
