@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import type { FormEvent } from 'react';
 import { ApiError, getMe, login } from './api/auth';
 import type { User } from './api/auth';
+import ProjectWorkspace from './ProjectWorkspace';
 
 const TOKEN_KEY = 'elv-demo-access-token';
 const EXPIRED = 'Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.';
@@ -30,6 +31,7 @@ export default function App() {
     setToken(null); setUser(null); setPassword('');
     setChecking(false); setPending(false); setError(message);
   }, []);
+  const handleSignOut = useCallback(() => signOut(), [signOut]);
 
   const restore = useCallback(async () => {
     const current = ++version.current;
@@ -95,6 +97,8 @@ export default function App() {
       setError(cause instanceof Error ? cause.message : 'Đăng nhập thất bại. Vui lòng thử lại.');
     } finally { if (current === version.current) setPending(false); }
   }
+
+  if (user && token) return <ProjectWorkspace token={token} user={user} onSignOut={handleSignOut} />;
 
   return (
     <div className="app-shell">
