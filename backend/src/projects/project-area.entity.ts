@@ -4,6 +4,7 @@ import { Project } from './project.entity';
 
 @Entity({ name: 'project_areas' })
 @Index('UQ_project_areas_project_code', ['projectId', 'code'], { unique: true })
+@Index('UQ_project_areas_project_id_id', ['projectId', 'id'], { unique: true })
 @Index('IDX_project_areas_tree_order', ['projectId', 'parentId', 'sortOrder'])
 @Check('CHK_project_areas_sort_order', '"sort_order" >= 0')
 export class ProjectArea {

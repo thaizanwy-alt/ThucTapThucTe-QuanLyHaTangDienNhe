@@ -4,6 +4,7 @@ import { SystemCategory } from './system-category.enum';
 
 @Entity({ name: 'project_systems' })
 @Index('UQ_project_systems_project_code', ['projectId', 'code'], { unique: true })
+@Index('UQ_project_systems_project_id_id', ['projectId', 'id'], { unique: true })
 @Index('IDX_project_systems_project_category', ['projectId', 'category'])
 export class ProjectSystem {
   @PrimaryGeneratedColumn('uuid')

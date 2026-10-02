@@ -130,6 +130,10 @@ test('service maps unique and dependent delete violations to 409', async () => {
   const system = await service.createSystem(project.id, { code: 'LAN', name: 'LAN', category: SystemCategory.LAN });
   systems.failDeleteCode = '23503';
   await rejectsStatus(service.deleteSystem(project.id, system.id), ConflictException, 409);
+  systems.failDeleteCode = '23001';
+  await rejectsStatus(service.deleteSystem(project.id, system.id), ConflictException, 409);
+  areas.failDeleteCode = '23001';
+  await rejectsStatus(service.deleteArea(project.id, (await service.createArea(project.id, { code: 'F-2', name: 'Tầng 2', type: AreaType.FLOOR })).id), ConflictException, 409);
   areas.failSaveCode = '23505';
   await rejectsStatus(service.createArea(project.id, { code: 'F-2', name: 'Tầng', type: AreaType.FLOOR }), ConflictException, 409);
 });

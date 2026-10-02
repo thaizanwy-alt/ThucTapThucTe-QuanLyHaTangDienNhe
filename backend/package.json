@@ -9,7 +9,8 @@
     "migration:run": "npm run build && typeorm migration:run -d dist/database/data-source.js",
     "migration:show": "npm run build && typeorm migration:show -d dist/database/data-source.js",
     "seed": "npm run build && node dist/database/seed.js",
-    "test": "npm run build && node --test --test-reporter=spec test/roles.guard.test.cjs test/projects.test.cjs"
+    "test": "npm run build && node --test --test-reporter=spec test/roles.guard.test.cjs test/projects.test.cjs test/tasks.test.cjs",
+    "test:db": "npm run build && node --test --test-reporter=spec test/tasks.db.test.cjs test/tasks.http.test.cjs"
   },
   "dependencies": {
     "@nestjs/common": "^11.0.0",

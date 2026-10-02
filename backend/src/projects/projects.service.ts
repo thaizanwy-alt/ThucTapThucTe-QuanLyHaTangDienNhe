@@ -110,7 +110,7 @@ export class ProjectsService {
     try {
       await this.areas.delete({ id: areaId, projectId });
     } catch (error) {
-      if (databaseCode(error) === '23503') throw new ConflictException('Area has dependent data');
+      if (['23503', '23001'].includes(databaseCode(error) ?? '')) throw new ConflictException('Area has dependent data');
       throw error;
     }
   }
@@ -150,7 +150,7 @@ export class ProjectsService {
     try {
       await this.systems.delete({ id: systemId, projectId });
     } catch (error) {
-      if (databaseCode(error) === '23503') throw new ConflictException('System has dependent data');
+      if (['23503', '23001'].includes(databaseCode(error) ?? '')) throw new ConflictException('System has dependent data');
       throw error;
     }
   }
