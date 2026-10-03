@@ -10,6 +10,7 @@ import type {
 } from './api/projects';
 import type { User } from './api/auth';
 import TaskPanel from './TaskPanel';
+import DevicePanel from './DevicePanel';
 
 interface Props {
   token: string;
@@ -131,6 +132,7 @@ export default function ProjectWorkspace({ token, user, onSignOut }: Props) {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [areas, setAreas] = useState<ProjectArea[]>([]);
   const [systems, setSystems] = useState<ProjectSystem[]>([]);
+  const [loadedDetailId, setLoadedDetailId] = useState<string | null>(null);
   const [loadingProjects, setLoadingProjects] = useState(true);
   const [loadingDetail, setLoadingDetail] = useState(false);
   const [detailRefreshFailed, setDetailRefreshFailed] = useState(false);
@@ -143,6 +145,7 @@ export default function ProjectWorkspace({ token, user, onSignOut }: Props) {
   const detailRequest = useRef(0);
 
   const selectedProject = projects.find(project => project.id === selectedId) ?? null;
+  const detailReady = selectedId !== null && loadedDetailId === selectedId && !loadingDetail && !detailRefreshFailed;
   const floors = useMemo(() => areas.filter(area => area.type === 'FLOOR'), [areas]);
   const roomsByFloor = useMemo(() => {
     const grouped = new Map<string, ProjectArea[]>();
@@ -177,11 +180,11 @@ export default function ProjectWorkspace({ token, user, onSignOut }: Props) {
 
   const refreshDetail = useCallback(async (projectId: string, failureMessage?: string): Promise<boolean> => {
     const requestId = ++detailRequest.current;
-    setLoadingDetail(true); setError('');
+    setLoadingDetail(true); setLoadedDetailId(null); setError('');
     try {
       const [areaRows, systemRows] = await Promise.all([listAreas(token, projectId), listSystems(token, projectId)]);
       if (requestId === detailRequest.current) {
-        setAreas(areaRows); setSystems(systemRows); setDetailRefreshFailed(false);
+        setAreas(areaRows); setSystems(systemRows); setLoadedDetailId(projectId); setDetailRefreshFailed(false);
       }
       return requestId === detailRequest.current;
     } catch (cause) {
@@ -197,7 +200,7 @@ export default function ProjectWorkspace({ token, user, onSignOut }: Props) {
 
   useEffect(() => {
     if (selectedId) void refreshDetail(selectedId);
-    else { detailRequest.current++; setAreas([]); setSystems([]); setDetailRefreshFailed(false); }
+    else { detailRequest.current++; setAreas([]); setSystems([]); setLoadedDetailId(null); setDetailRefreshFailed(false); }
   }, [selectedId, refreshDetail]);
 
   async function saveProject(input: ProjectInput) {
@@ -323,7 +326,7 @@ export default function ProjectWorkspace({ token, user, onSignOut }: Props) {
             {!manager && <div className="read-only-note">Bạn chỉ có thể cập nhật công việc được giao; hồ sơ công trình ở chế độ chỉ đọc.</div>}
             {notice && <div className="success-note" role="status">{notice}<button onClick={() => setNotice('')} aria-label="Đóng thông báo">×</button></div>}
             {error && <div className="error-note" role="alert">{error}<button onClick={() => setError('')} aria-label="Đóng thông báo">×</button></div>}
-            {loadingDetail ? <div className="detail-loading" role="status"><span className="spinner" />Đang tải cấu trúc công trình…</div> : detailRefreshFailed ? <div className="detail-loading">Dữ liệu chưa được tải lại.</div> : <div className="detail-grid">
+            {detailRefreshFailed ? <div className="detail-loading">Dữ liệu chưa được tải lại.</div> : !detailReady ? <div className="detail-loading" role="status"><span className="spinner" />Đang tải cấu trúc công trình…</div> : <div className="detail-grid">
               <section className="structure-panel">
                 <div className="panel-heading"><div><span className="section-kicker">Không gian</span><h3>Tầng và phòng</h3></div>{manager && <div className="menu-wrap"><button className="button button-small button-quiet" onClick={() => beginArea('FLOOR')}>＋ Tầng</button></div>}</div>
                 {areas.length === 0 ? <div className="empty-panel"><span className="empty-mark">⌂</span><h4>Chưa có tầng hoặc phòng</h4><p>Thêm tầng trước, sau đó đặt các phòng bên dưới.</p>{manager && <button className="text-button" onClick={() => beginArea('FLOOR')}>Thêm tầng đầu tiên</button>}</div> : <div className="area-tree">
@@ -346,7 +349,8 @@ export default function ProjectWorkspace({ token, user, onSignOut }: Props) {
                 </li>)}</ul>}
               </section>
             </div>}
-            {!loadingDetail && !detailRefreshFailed && <TaskPanel key={selectedProject.id} token={token} user={user} projectId={selectedProject.id} systems={systems} areas={areas} onSignOut={onSignOut} />}
+            {detailReady && <TaskPanel key={selectedProject.id} token={token} user={user} projectId={selectedProject.id} systems={systems} areas={areas} onSignOut={onSignOut} />}
+            {detailReady && <DevicePanel key={`devices:${selectedProject.id}`} token={token} user={user} projectId={selectedProject.id} systems={systems} areas={areas} onSignOut={onSignOut} />}
           </>}
         </section>
       </main>

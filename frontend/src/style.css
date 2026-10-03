@@ -254,6 +254,52 @@ dd { margin: 0; font-size: 15px; font-weight: 600; overflow-wrap: anywhere; }
   .task-meta { grid-template-columns: 1fr; }
   .task-panel-heading .button { white-space: normal; }
 }
+.devices-panel { margin-top: 37px; padding-top: 12px; border-top: 2px solid var(--blueprint); min-width: 0; }
+.device-panel-heading { align-items: flex-start; }
+.device-caption { margin: 10px 0; color: #536961; font-size: 13px; line-height: 1.6; }
+.device-loading { min-height: 150px; display: flex; align-items: center; gap: 10px; color: var(--muted); }
+.device-list, .device-system-tags { margin: 0; padding: 0; list-style: none; }
+.device-register-heading, .device-row { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1.15fr); gap: 20px; }
+.device-register-heading { padding: 12px 0; font-size: 12px; color: var(--blueprint); border-bottom: 1px solid var(--line); }
+.device-row { padding: 19px 0; border-bottom: 1px solid var(--line); }
+.device-row > div { min-width: 0; overflow-wrap: anywhere; }
+.device-identity, .device-location { display: flex; flex-direction: column; align-items: flex-start; gap: 7px; font-size: 13px; line-height: 1.5; }
+.device-code, .device-label { display: inline-block; max-width: 100%; padding: 5px 9px; border: 1px solid #9aafb4; border-left: 4px solid var(--blueprint); background: #e8efed; color: #244f61; font-size: 13px; font-weight: 750; text-align: left; overflow-wrap: anywhere; }
+.device-code { cursor: pointer; }
+.device-type, .device-location small { color: #536961; font-size: 12px; }
+.device-mobile-label { display: none; }
+.device-system-tags { display: flex; flex-wrap: wrap; gap: 5px; }
+.device-system-tags li { max-width: 100%; padding: 4px 7px; border: 1px solid var(--line); font-size: 12px; line-height: 1.5; }
+.device-actions { display: flex; flex-wrap: wrap; gap: 8px 16px; margin-top: 12px; }
+.device-actions button { min-height: 34px; }
+.device-delete { color: var(--danger); }
+.device-dialog { width: min(650px, 100%); }
+.device-form fieldset { min-width: 0; padding: 0; margin: 0 0 20px; border: 0; }
+.device-form legend { width: 100%; margin: 0 0 15px; padding-bottom: 8px; border-bottom: 1px solid var(--line); color: var(--blueprint); font-size: 14px; font-weight: 700; }
+.device-hint { margin: 0 0 16px; color: #536961; font-size: 12px; line-height: 1.6; }
+.device-form .device-checkbox { display: flex; flex-direction: row; align-items: center; gap: 12px; padding: 8px 0; cursor: pointer; }
+.device-form .device-checkbox input { width: 20px; height: 20px; min-height: 20px; margin: 0; flex: 0 0 auto; accent-color: var(--forest); }
+.device-checkbox span { min-width: 0; overflow-wrap: anywhere; }
+.device-checkbox small { display: block; margin-top: 4px; font-weight: 400; color: #536961; }
+.device-detail-title h3 { font-size: 21px; margin: 12px 0 6px; overflow-wrap: anywhere; }
+.device-detail-title p { font-size: 14px; color: var(--blueprint); }
+.device-detail-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 20px; margin: 25px 0; }
+.device-detail-grid dt { color: #536961; }
+.device-detail-grid dd { font-size: 14px; line-height: 1.6; white-space: pre-wrap; }
+.device-detail-wide { grid-column: 1 / -1; }
+.device-delete-warning { font-size: 15px; line-height: 1.7; overflow-wrap: anywhere; }
+.device-danger-button { background: var(--danger); border-color: var(--danger); }
+.device-danger-button:hover { background: #83372f; }
+@media (max-width: 700px) {
+  .devices-panel { margin-top: 28px; }
+  .device-register-heading { display: none; }
+  .device-row { grid-template-columns: 1fr; gap: 15px; padding: 20px 0; }
+  .device-mobile-label { display: block; font-size: 12px; color: var(--blueprint); font-weight: 650; }
+  .device-detail-grid { grid-template-columns: 1fr; gap: 16px; }
+  .device-actions button { min-height: 44px; }
+  .device-dialog .form-actions { flex-wrap: wrap; }
+  .device-panel-heading .button { white-space: normal; }
+}
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { scroll-behavior: auto !important; animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; }
 }
