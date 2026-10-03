@@ -4,29 +4,26 @@ Cập nhật ngày 03/10/2026. Hướng dẫn cài/chạy: [README.md](../README
 
 ## Git và phạm vi
 
-- Branch `feature/project-structure`, HEAD `bda5341` (backend Project Structure). `main` và `feature/auth-backend` ở `65fee4b`.
-- Đã commit: nền dự án, backend auth, frontend login, tài liệu quy ước, backend Project → Area → ProjectSystem.
-- Chưa commit: sửa export JWT trong `AuthModule`, frontend Project Structure, chỉnh `backend/.env.example` và tài liệu trạng thái này. Không push.
+- Branch `feature/work-progress`, HEAD `91e81b0` (`feat: add project task backend`); `main` ở `401041f`.
+- Backend ProjectTask đã commit. Giao diện công việc và tài liệu STATUS trong lượt này còn chưa commit; không push.
 
 ## Đã triển khai
 
-- React/Vite và NestJS/TypeORM dùng PostgreSQL; AppModule và DataSource CLI giữ `synchronize: false`, thay đổi schema qua migration.
-- Auth có hai vai trò `MANAGER` và `TECHNICIAN`, JWT `/auth/login` và `/auth/me`; phiên frontend lưu localStorage chỉ cho demo local.
-- Backend có Project, ProjectArea (FLOOR/ROOM), ProjectSystem (LAN/WIFI/CAMERA), DTO, migration, API và phân quyền: MANAGER ghi, TECHNICIAN đọc.
-- Frontend có danh sách/tạo/sửa công trình, cây tầng/phòng, danh sách/tạo/sửa/xóa hạng mục, trạng thái tải/rỗng/lỗi, bố cục mobile. Lỗi mã trùng nay hiển thị ngay trong hộp thoại.
-- Chưa triển khai Task, Device, tiến độ, checklist, nghiệm thu hay các nghiệp vụ ngoài phạm vi.
+- Nền React/Vite, NestJS/TypeORM và PostgreSQL. AppModule/DataSource CLI giữ `synchronize: false`; schema dùng migration.
+- Auth JWT cho `MANAGER` và `TECHNICIAN`; frontend lưu phiên trong localStorage chỉ phục vụ demo local.
+- Project → Area (FLOOR/ROOM) → ProjectSystem (LAN/WIFI/CAMERA) có backend và frontend; MANAGER ghi, TECHNICIAN đọc hồ sơ công trình.
+- Backend ProjectTask có một kỹ thuật viên active mỗi việc; MANAGER giao/sửa khi `ASSIGNED` hoặc `RETURNED`, duyệt/trả việc đã gửi; TECHNICIAN chỉ thấy việc của mình, bắt đầu và gửi duyệt với ghi chú bắt buộc. Migration dùng FK ghép cùng Project và `ON DELETE RESTRICT`.
+- Frontend công việc trong trang công trình dùng API thật: chọn kỹ thuật viên active, tạo/sửa, bắt đầu, gửi duyệt, trả việc và duyệt; có loading/empty/error. Sau ghi thành công mà GET làm mới lỗi, form đóng, ẩn danh sách cũ và cho tải lại bằng GET.
+- Chưa làm Device, checklist, nghiệm thu, bảo trì hoặc frontend test tự động riêng.
 
-## Đã xác minh trên máy local
+## Đã xác minh local
 
-- `npm run build` đạt; `npm run test -w backend` đạt 8/8 sau sửa frontend.
-- Backend ở `localhost:3000`; `/health` trả `database: connected`.
-- Chrome local: MANAGER đăng nhập, tạo/sửa công trình, thêm FLOOR → ROOM và LAN/WIFI/CAMERA. Tải lại trang vẫn thấy tên đã sửa, tầng, phòng và đủ ba hạng mục.
-- TECHNICIAN đăng nhập, xem được cùng công trình; giao diện không hiện thao tác ghi. Kiểm thử HTTP trước đó xác nhận POST/PATCH của TECHNICIAN trả 403.
-- Lỗi trùng mã hiện trong hộp thoại; ở chiều rộng 390 px, trang không tràn ngang và khu vực chi tiết xem được.
-- Dữ liệu kiểm thử local còn trong database: công trình `TEST-LOCAL-1790962973373` và `FE-TEST-1790963672478`.
+- `npm run build` đạt trong lượt này. Backend test 16/16 và DB/Nest HTTP test 2/2 đã đạt ở lượt backend trước; không chạy lại vì lượt này không sửa backend.
+- Thử giao diện bằng Chrome local: MANAGER tạo/sửa việc → TECHNICIAN bắt đầu/gửi duyệt → MANAGER trả việc → TECHNICIAN bắt đầu/gửi lại → MANAGER duyệt. Ghi chú chỉ gồm khoảng trắng bị chặn; tải lại trang giữ trạng thái chờ duyệt và đã duyệt.
+- Giả lập GET công việc thất bại sau PATCH thành công: server đã lưu, giao diện báo đúng, không hiện danh sách cũ; nút tải lại GET khôi phục dữ liệu. Ở 390 px, trang và form không tràn ngang.
+- Hai công việc thử trong công trình demo còn ở PostgreSQL local (một đã duyệt, một đã giao).
 
 ## Cần lưu ý
 
-- Frontend chưa có test tự động riêng; các luồng trên được kiểm tra tương tác bằng Chrome local trong lượt này.
-- `backend/.env` không được Git theo dõi. Các biến mật khẩu/JWT trong `.env.example` đã rỗng; host/port trong mẫu vẫn là cấu hình local từ thay đổi chưa commit.
-- Rà diff và quyết định dữ liệu kiểm thử local trước khi commit. Không có API xóa Project.
+- Khi kiểm tra, cổng 3000 đang chạy backend cũ không có Task API; lượt này dùng backend mới ở 3001 và Vite ở 5174 với `VITE_API_URL=http://localhost:3001`. Cần khởi động lại backend mặc định trước khi demo trên 3000/5173.
+- `backend/.env` không được Git theo dõi; không đưa mật khẩu, JWT secret hoặc token vào repo. Chưa commit/push giao diện Task.

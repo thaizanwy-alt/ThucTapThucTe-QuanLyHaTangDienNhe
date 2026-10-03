@@ -9,6 +9,7 @@ import type {
   AreaType, Project, ProjectArea, ProjectInput, ProjectStatus, ProjectSystem, SystemCategory,
 } from './api/projects';
 import type { User } from './api/auth';
+import TaskPanel from './TaskPanel';
 
 interface Props {
   token: string;
@@ -319,7 +320,7 @@ export default function ProjectWorkspace({ token, user, onSignOut }: Props) {
               <div className="detail-actions"><span className={`status-label status-label-${selectedProject.status.toLowerCase()}`}>{statusLabels[selectedProject.status]}</span>{manager && <button className="button button-quiet" onClick={() => openProjectEditor(selectedProject)}>Sửa hồ sơ</button>}</div>
             </div>
             {selectedProject.description && <p className="project-description">{selectedProject.description}</p>}
-            {!manager && <div className="read-only-note">Bạn đang xem ở chế độ chỉ đọc.</div>}
+            {!manager && <div className="read-only-note">Bạn chỉ có thể cập nhật công việc được giao; hồ sơ công trình ở chế độ chỉ đọc.</div>}
             {notice && <div className="success-note" role="status">{notice}<button onClick={() => setNotice('')} aria-label="Đóng thông báo">×</button></div>}
             {error && <div className="error-note" role="alert">{error}<button onClick={() => setError('')} aria-label="Đóng thông báo">×</button></div>}
             {loadingDetail ? <div className="detail-loading" role="status"><span className="spinner" />Đang tải cấu trúc công trình…</div> : detailRefreshFailed ? <div className="detail-loading">Dữ liệu chưa được tải lại.</div> : <div className="detail-grid">
@@ -345,6 +346,7 @@ export default function ProjectWorkspace({ token, user, onSignOut }: Props) {
                 </li>)}</ul>}
               </section>
             </div>}
+            {!loadingDetail && !detailRefreshFailed && <TaskPanel key={selectedProject.id} token={token} user={user} projectId={selectedProject.id} systems={systems} areas={areas} onSignOut={onSignOut} />}
           </>}
         </section>
       </main>

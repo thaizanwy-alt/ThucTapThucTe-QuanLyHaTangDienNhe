@@ -162,6 +162,37 @@ dd { margin: 0; font-size: 15px; font-weight: 600; overflow-wrap: anywhere; }
 .tag-wifi { color: #8e652f; background: #f5efe3; }
 .tag-camera { color: #625e83; background: #efedf5; }
 .detail-loading { min-height: 220px; display: flex; align-items: center; justify-content: center; gap: 12px; color: var(--muted); font-size: 14px; }
+.tasks-panel { margin-top: 37px; padding-top: 10px; border-top: 1px solid #cbd8ce; }
+.task-panel-heading { border-bottom-color: #cbd8ce; }
+.task-summary { padding: 12px 1px 8px; color: var(--muted); font-size: 12px; }
+.task-guidance { margin: 8px 0; color: #5d7069; font-size: 13px; line-height: 1.5; }
+.task-loading { min-height: 150px; display: flex; align-items: center; gap: 11px; color: var(--muted); font-size: 13px; }
+.task-unavailable { padding: 18px 2px 24px; color: #6c6258; font-size: 13px; line-height: 1.6; }
+.task-empty { min-height: 175px; }
+.task-list { list-style: none; padding: 0; margin: 0; }
+.task-row { --task-accent: #839991; padding: 17px 18px 17px 15px; border-bottom: 1px solid var(--line); border-left: 3px solid var(--task-accent); background: #fffefa; }
+.task-row + .task-row { margin-top: 7px; }
+.task-status-in_progress { --task-accent: #4d8869; }
+.task-status-submitted { --task-accent: #b98546; }
+.task-status-returned { --task-accent: #a94436; }
+.task-status-approved { --task-accent: #758747; }
+.task-main { display: flex; align-items: flex-start; justify-content: space-between; gap: 14px; }
+.task-title { min-width: 0; display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 12px; }
+.task-title h4 { margin: 0; font-size: 16px; line-height: 1.4; overflow-wrap: anywhere; }
+.task-code { color: var(--blueprint); font-size: 11px; font-weight: 700; white-space: nowrap; }
+.task-state { flex: 0 0 auto; padding: 5px 8px; border: 1px solid currentColor; color: var(--task-accent); font-size: 11px; font-weight: 700; white-space: nowrap; }
+.task-meta { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 9px 18px; margin-top: 13px; color: #536961; font-size: 12px; }
+.task-meta span { min-width: 0; overflow-wrap: anywhere; }
+.task-meta strong { display: block; margin-bottom: 3px; color: var(--muted); font-size: 10px; font-weight: 650; }
+.task-description { margin: 11px 0 0; color: #536961; font-size: 12px; line-height: 1.55; overflow-wrap: anywhere; }
+.task-note { display: grid; grid-template-columns: 125px minmax(0, 1fr); gap: 8px; margin-top: 12px; padding: 9px 11px; background: #f1f5ed; color: #405b4c; font-size: 12px; line-height: 1.5; }
+.task-note strong { font-weight: 700; }
+.task-note span { overflow-wrap: anywhere; }
+.task-return-note { background: #faeee8; color: #864638; }
+.task-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 13px; }
+.task-actions:empty { display: none; }
+.task-form .form-hint { margin: -12px 0 16px; color: #84603a; font-size: 12px; line-height: 1.5; }
+.error-note .retry-inline { float: none; margin-left: 8px; color: inherit; font-size: 12px; font-weight: 700; text-decoration: underline; }
 .spinner { width: 17px; height: 17px; border: 2px solid #ced9ce; border-top-color: var(--forest); border-radius: 50%; animation: spin .8s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
 .modal-backdrop { position: fixed; inset: 0; z-index: 10; padding: 20px; display: grid; place-items: center; overflow-y: auto; background: #14282288; }
@@ -208,9 +239,20 @@ dd { margin: 0; font-size: 15px; font-weight: 600; overflow-wrap: anywhere; }
   .system-row { gap: 8px; }
   .category-tag { font-size: 9px; padding: 4px 5px; }
   .system-copy small { max-width: 135px; }
+  .tasks-panel { margin-top: 28px; }
+  .task-panel-heading { align-items: flex-start; }
+  .task-meta { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .task-row { padding: 14px 12px; }
+  .task-main { flex-direction: column; gap: 8px; }
+  .task-note { grid-template-columns: 1fr; gap: 3px; }
+  .task-actions .button { flex: 1 1 130px; white-space: normal; }
   .form-grid { grid-template-columns: 1fr; gap: 0; }
   .modal-backdrop { padding: 12px; align-items: end; }
   .modal { max-height: 92dvh; padding: 20px 18px; }
+}
+@media (max-width: 430px) {
+  .task-meta { grid-template-columns: 1fr; }
+  .task-panel-heading .button { white-space: normal; }
 }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { scroll-behavior: auto !important; animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; }
