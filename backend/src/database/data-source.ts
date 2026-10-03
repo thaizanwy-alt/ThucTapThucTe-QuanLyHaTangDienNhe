@@ -7,9 +7,12 @@ import { Project } from '../projects/project.entity';
 import { ProjectArea } from '../projects/project-area.entity';
 import { ProjectSystem } from '../projects/project-system.entity';
 import { ProjectTask } from '../tasks/project-task.entity';
+import { ProjectDevice } from '../devices/project-device.entity';
+import { ProjectDeviceSystem } from '../devices/project-device-system.entity';
 import { CreateUsers1790000000000 } from './migrations/1790000000000-CreateUsers';
 import { CreateProjectStructure1791000000000 } from './migrations/1791000000000-CreateProjectStructure';
 import { CreateProjectTasks1792000000000 } from './migrations/1792000000000-CreateProjectTasks';
+import { CreateProjectDevices1793000000000 } from './migrations/1793000000000-CreateProjectDevices';
 
 config({ path: resolve(__dirname, '../../.env') });
 
@@ -22,7 +25,7 @@ export const dataSource = new DataSource({
   database: process.env.DB_NAME ?? 'electrical_infrastructure',
   uuidExtension: 'pgcrypto',
   installExtensions: false,
-  entities: [User, Project, ProjectArea, ProjectSystem, ProjectTask],
-  migrations: [CreateUsers1790000000000, CreateProjectStructure1791000000000, CreateProjectTasks1792000000000],
+  entities: [User, Project, ProjectArea, ProjectSystem, ProjectTask, ProjectDevice, ProjectDeviceSystem],
+  migrations: [CreateUsers1790000000000, CreateProjectStructure1791000000000, CreateProjectTasks1792000000000, CreateProjectDevices1793000000000],
   synchronize: false,
 });

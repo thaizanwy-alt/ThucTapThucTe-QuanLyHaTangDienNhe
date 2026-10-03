@@ -1,0 +1,8 @@
+export enum DeviceType {
+  RACK = 'RACK',
+  PATCH_PANEL = 'PATCH_PANEL',
+  SWITCH = 'SWITCH',
+  NETWORK_OUTLET = 'NETWORK_OUTLET',
+  AP = 'AP',
+  CAMERA = 'CAMERA',
+}
