@@ -290,6 +290,53 @@ dd { margin: 0; font-size: 15px; font-weight: 600; overflow-wrap: anywhere; }
 .device-delete-warning { font-size: 15px; line-height: 1.7; overflow-wrap: anywhere; }
 .device-danger-button { background: var(--danger); border-color: var(--danger); }
 .device-danger-button:hover { background: #83372f; }
+.connections-panel { margin-top: 38px; padding-top: 14px; border-top: 2px solid var(--blueprint); min-width: 0; }
+.connection-heading { align-items: flex-start; }
+.connection-trace-box { margin-top: 23px; padding: clamp(16px, 2.5vw, 26px); border: 1px solid #b8c9c7; background: #eaf0ed; }
+.connection-section-title { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 14px; }
+.connection-section-title h4 { margin: 0; color: var(--ink); font-size: 16px; }
+.connection-section-title > span { color: #536961; font-size: 12px; }
+.connection-search { display: flex; align-items: end; gap: 10px; }
+.connection-search label, .connection-device-picker { display: flex; flex-direction: column; gap: 7px; min-width: 0; flex: 1; font-size: 13px; font-weight: 650; }
+.connection-search input, .connection-device-picker select { width: 100%; min-height: 43px; padding: 9px 11px; border: 1px solid #b8c9c7; border-radius: 3px; background: var(--surface); color: var(--ink); font-size: 16px; }
+.trace-result { margin-top: 18px; padding-top: 16px; border-top: 1px solid #b8c9c7; }
+.trace-origin { display: flex; flex-wrap: wrap; align-items: baseline; gap: 5px 11px; }
+.trace-origin strong { overflow-wrap: anywhere; }
+.trace-origin span { color: var(--blueprint); font-size: 12px; }
+.trace-origin small { width: 100%; color: #536961; }
+.trace-network { display: flex; flex-wrap: wrap; gap: 7px; margin-top: 12px; }
+.trace-network span { padding: 5px 8px; border: 1px solid #c3d2c8; background: var(--surface); font-size: 12px; }
+.trace-path { margin-top: 17px; padding-left: 14px; border-left: 3px solid var(--blueprint); }
+.trace-path > strong { font-size: 13px; }
+.trace-segment { display: flex; align-items: stretch; gap: 11px; margin-top: 10px; }
+.trace-segment > span { width: 23px; height: 23px; flex: 0 0 auto; display: grid; place-items: center; border: 1px solid #9cb5b2; color: var(--blueprint); font-size: 11px; }
+.trace-segment > div { display: flex; flex-wrap: wrap; gap: 5px 12px; align-items: baseline; min-width: 0; font-size: 12px; }
+.trace-segment b { font-weight: 650; overflow-wrap: anywhere; }
+.trace-segment small { color: var(--blueprint); }
+.trace-complete, .trace-missing { margin-top: 12px; padding: 10px 12px; font-size: 12px; line-height: 1.6; }
+.trace-complete { border: 1px solid #b4cbbb; background: #e4eee4; color: var(--forest-dark); }
+.trace-complete small { display: block; color: #536961; }
+.trace-missing { border: 1px solid #dbcba9; background: #fbf4e3; color: #735523; }
+.connection-warning { padding: 12px; border: 1px solid #dbcba9; background: #fbf4e3; color: #735523; font-size: 13px; line-height: 1.6; }
+.connection-register { margin-top: 25px; min-width: 0; }
+.connection-device-picker { max-width: 450px; margin-bottom: 15px; }
+.connection-port-list, .connection-wire-list, .connection-profile-list { margin: 0; padding: 0; list-style: none; }
+.connection-port-row, .connection-wire-row { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr) auto; align-items: start; gap: 14px; padding: 14px 0; border-top: 1px solid var(--line); font-size: 13px; }
+.connection-port-row > div, .connection-wire-row > div { min-width: 0; }
+.connection-port-row small, .connection-wire-row small { display: block; margin-top: 6px; color: #536961; overflow-wrap: anywhere; }
+.connection-faces { display: flex; flex-wrap: wrap; gap: 6px; }
+.connection-faces span { padding: 5px 7px; border: 1px solid var(--line); font-size: 12px; }
+.face-free { color: var(--forest-dark); background: #e9f0e6; }
+.face-occupied { color: #72552b; background: #f7f0e0; }
+.connection-wire-ends { display: flex; flex-wrap: wrap; gap: 5px; overflow-wrap: anywhere; }
+.connection-wire-ends span:nth-child(2) { color: var(--blueprint); }
+.connection-profile-list li { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 15px; padding: 12px 0; border-top: 1px solid var(--line); font-size: 13px; }
+.connection-profile-list li span { color: #536961; }
+.connection-profile-list li button { margin-left: auto; }
+.connection-dialog { width: min(650px, 100%); }
+.connection-form fieldset { min-width: 0; padding: 0; margin: 0; border: 0; }
+.connection-profile-read { display: grid; grid-template-columns: 110px 1fr; gap: 12px; }
+.connection-profile-read dt, .connection-profile-read dd { margin: 0; }
 @media (max-width: 700px) {
   .devices-panel { margin-top: 28px; }
   .device-register-heading { display: none; }
@@ -299,6 +346,12 @@ dd { margin: 0; font-size: 15px; font-weight: 600; overflow-wrap: anywhere; }
   .device-actions button { min-height: 44px; }
   .device-dialog .form-actions { flex-wrap: wrap; }
   .device-panel-heading .button { white-space: normal; }
+  .connection-port-row, .connection-wire-row { grid-template-columns: 1fr; gap: 9px; }
+  .connection-search { flex-wrap: wrap; }
+  .connection-search .button { width: 100%; }
+  .connection-section-title { align-items: flex-start; }
+  .connection-section-title > span { text-align: right; }
+  .connection-profile-list li button { margin-left: 0; }
 }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { scroll-behavior: auto !important; animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; }

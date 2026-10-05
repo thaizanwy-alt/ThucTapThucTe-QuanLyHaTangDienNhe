@@ -7,6 +7,7 @@ import type { DeviceInput, DeviceType, DeviceUpdate, ProjectDevice } from './api
 import type { ProjectArea, ProjectSystem } from './api/projects';
 import { deviceDraft, deviceLabels, devicePayload } from './device-form';
 import type { DeviceDraft } from './device-form';
+import { saveDeviceAndNotify } from './device-refresh';
 
 interface Props {
   token: string;
@@ -15,6 +16,7 @@ interface Props {
   areas: ProjectArea[];
   systems: ProjectSystem[];
   onSignOut: () => void;
+  onDeviceChanged: () => void;
 }
 
 type Dialog = { kind: 'create' } | { kind: 'edit' | 'view' | 'delete'; device: ProjectDevice };
@@ -133,7 +135,7 @@ function DeviceForm({ initial, areas, systems, racks, busy, onCancel, onSave }: 
   </form>;
 }
 
-export default function DevicePanel({ token, user, projectId, areas, systems, onSignOut }: Props) {
+export default function DevicePanel({ token, user, projectId, areas, systems, onSignOut, onDeviceChanged }: Props) {
   const manager = user.role === 'MANAGER';
   const [devices, setDevices] = useState<ProjectDevice[]>([]);
   const [loading, setLoading] = useState(true);
@@ -165,7 +167,7 @@ export default function DevicePanel({ token, user, projectId, areas, systems, on
     if (!manager || writing.current || loading || refreshFailed) return;
     writing.current = true;
     setBusy(true); setModalError(''); setError(''); setNotice('');
-    try { await action(); }
+    try { await saveDeviceAndNotify(action, onDeviceChanged); }
     catch (cause) {
       setModalError(messageOf(cause));
       if (cause instanceof ApiError && cause.status === 401) onSignOut();

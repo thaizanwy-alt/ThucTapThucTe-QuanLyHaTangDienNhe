@@ -11,6 +11,7 @@ import type {
 import type { User } from './api/auth';
 import TaskPanel from './TaskPanel';
 import DevicePanel from './DevicePanel';
+import ConnectionPanel from './ConnectionPanel';
 
 interface Props {
   token: string;
@@ -132,6 +133,7 @@ export default function ProjectWorkspace({ token, user, onSignOut }: Props) {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [areas, setAreas] = useState<ProjectArea[]>([]);
   const [systems, setSystems] = useState<ProjectSystem[]>([]);
+  const [deviceRevision, setDeviceRevision] = useState(0);
   const [loadedDetailId, setLoadedDetailId] = useState<string | null>(null);
   const [loadingProjects, setLoadingProjects] = useState(true);
   const [loadingDetail, setLoadingDetail] = useState(false);
@@ -143,6 +145,7 @@ export default function ProjectWorkspace({ token, user, onSignOut }: Props) {
   const [areaEditor, setAreaEditor] = useState<AreaEditor>(null);
   const [systemEditor, setSystemEditor] = useState<SystemEditor>(null);
   const detailRequest = useRef(0);
+  const onDeviceChanged = useCallback(() => setDeviceRevision(value => value + 1), []);
 
   const selectedProject = projects.find(project => project.id === selectedId) ?? null;
   const detailReady = selectedId !== null && loadedDetailId === selectedId && !loadingDetail && !detailRefreshFailed;
@@ -350,7 +353,8 @@ export default function ProjectWorkspace({ token, user, onSignOut }: Props) {
               </section>
             </div>}
             {detailReady && <TaskPanel key={selectedProject.id} token={token} user={user} projectId={selectedProject.id} systems={systems} areas={areas} onSignOut={onSignOut} />}
-            {detailReady && <DevicePanel key={`devices:${selectedProject.id}`} token={token} user={user} projectId={selectedProject.id} systems={systems} areas={areas} onSignOut={onSignOut} />}
+            {detailReady && <DevicePanel key={`devices:${selectedProject.id}`} token={token} user={user} projectId={selectedProject.id} systems={systems} areas={areas} onSignOut={onSignOut} onDeviceChanged={onDeviceChanged} />}
+            {detailReady && <ConnectionPanel key={`connections:${selectedProject.id}`} token={token} user={user} projectId={selectedProject.id} deviceRevision={deviceRevision} onSignOut={onSignOut} />}
           </>}
         </section>
       </main>

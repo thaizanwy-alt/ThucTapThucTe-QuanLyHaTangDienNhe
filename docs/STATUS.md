@@ -4,7 +4,7 @@ Cập nhật ngày 05/10/2026. Hướng dẫn cài/chạy: [README.md](../README
 
 ## Phạm vi
 
-- Project/Area/System, Task và danh mục Device đã có backend/frontend. Chặng hiện tại có backend cổng/kết nối và hồ sơ mạng khai báo; chưa có UI cổng/kết nối.
+- Project/Area/System, Task và danh mục Device đã có backend/frontend. Cổng/kết nối và hồ sơ mạng khai báo đã có backend cùng giao diện frontend; chưa có sơ đồ mạng.
 
 ## Đã triển khai
 
@@ -20,7 +20,8 @@ Cập nhật ngày 05/10/2026. Hướng dẫn cài/chạy: [README.md](../README
 - Migration `1795000000000-EnforceConnectionEndpointPair` thêm constraint trigger kiểm tra tại COMMIT: connection còn tồn tại phải có đúng endpoint A và B; transaction tạo/xóa dây đầy đủ vẫn hợp lệ.
 - Trace ổ mạng bắt đầu ở REAR, CAMERA/AP ở SINGLE; hỗ trợ trực tiếp, qua panel, qua ổ mạng rồi panel và đường thiếu đoạn. Response có Area/rack, endpoint/version; danh sách port có sides với connectionId hoặc null. complete chỉ là đã khai báo đường tới switch, không xác nhận online.
 - Backend DeviceNetworkProfile cho CAMERA/AP dùng GET (200 `null` nếu chưa có) và PUT đủ `addressMode`/`ipAddress`/`macAddress`; IP nhập tay trùng trong Project chỉ trả cảnh báo `DUPLICATE_IP_IN_PROJECT`. Switch port có `accessVlanId` 1–4094/null và `poeEnabled` boolean/null; trace trả hồ sơ mạng và VLAN/PoE của switch port cuối đường. Xóa Device còn port trả 409; nếu xóa được, profile và liên kết System được dọn cùng transaction.
-- Chưa làm frontend/sơ đồ kết nối, giám sát online, checklist, nghiệm thu hoặc bảo trì. Giữ nguyên luồng Task; DevicePanel dùng React key riêng để không trùng TaskPanel.
+- Frontend sổ đấu nối trong chi tiết công trình dùng API thật: xem mặt cổng trống/đã nối, tạo/sửa/xóa cổng, tạo/ngắt/chuyển dây theo version, nhập hồ sơ mạng và cảnh báo IP trùng; cả hai vai trò tra mã để xem từng đoạn đường dây, vị trí, rack, IP/MAC, VLAN/PoE. MANAGER ghi, TECHNICIAN chỉ đọc. Ghi thành công rồi GET lỗi sẽ đóng form, ẩn dữ liệu cũ và chỉ cho thử lại GET.
+- Chưa làm sơ đồ kết nối, giám sát online, checklist, nghiệm thu hoặc bảo trì. Giữ nguyên luồng Task; các panel dùng React key theo Project.
 
 ## Đã xác minh local
 
@@ -31,6 +32,8 @@ Cập nhật ngày 05/10/2026. Hướng dẫn cài/chạy: [README.md](../README
 - Test connections tự tạo/xóa DB `connections_test_<uuid>`, cần tài khoản PostgreSQL local có quyền CREATEDB; down/up chỉ diễn ra tại DB tạm, giữ nguyên bảng/dữ liệu User/Project/Device cũ trong DB đó. Dùng cấu hình kết nối local, không ghi bí mật. Build toàn repo đạt exit code 0.
 - API dưới `/projects/:projectId`: GET/POST `devices/:deviceId/ports`, PATCH/DELETE `devices/:deviceId/ports/:portId`; GET/POST `connections` (GET lọc deviceId), DELETE `connections/:connectionId`, POST `connections/:connectionId/rewire` (200), GET `connections/trace?deviceCode=...`. MANAGER ghi, cả hai vai trò đọc; POST tạo trả 201, DELETE 204. Rewire nhận đủ kind/a/b/expectedVersion, không sửa dây khác.
 - API hồ sơ mạng: GET/PUT `/projects/:projectId/devices/:deviceId/network-profile`. GET trả JSON `null` nếu chưa có; PUT trả profile và mảng `warnings`. MANAGER ghi, TECHNICIAN đọc. Port API hiện có nhận thêm `accessVlanId` và `poeEnabled` cho SWITCH.
+- Frontend connections: `node --test --test-reporter=spec frontend/test/connections.test.cjs frontend/test/devices.test.cjs` đạt 13/13, gồm hồi quy thông báo Device ghi thành công dù GET làm mới lỗi, cặp cổng hợp lệ, nhãn đoạn thiếu và trace response về muộn sau khi Device/port tải lại. GET lỗi rồi retry không làm trace cũ hiện lại. Test seed đạt 4/4, gồm hai ca Device xung đột `description`/`capacityU` dừng trước thao tác ghi; `npm run build` toàn repo đạt. Chưa xác minh tương tác này bằng Chrome trong phiên hiện tại.
+- Seed demo API-only: sau `/health` trả database connected và migration local 7/7, `npm run seed:demo -w backend` tạo `CT-DEMO-ELV-01` (6 Area, 3 System, 13 Device gồm 2 Rack/2 Switch/2 Panel/3 Outlet/1 AP/3 Camera, 16 Port, 10 Connection, 4 NetworkProfile, 5 Task ở ASSIGNED/IN_PROGRESS/SUBMITTED/RETURNED/APPROVED). Rack trung tâm và phụ chỉ được đặt tên/vị trí, chưa có quan hệ tủ–tủ. GET API xác nhận `CAM-DIRECT`, `CAM-OUTLET`, `CAM-PANEL`, `OUT-LOBBY` hoàn chỉnh và `OUT-PENDING` thiếu đoạn; ba Project cũ giữ nguyên số lượng Area/System/Device. Chạy lại seed cho số tạo mới bằng 0. Script cần backend đang chạy, migration và hai tài khoản demo đã seed, mật khẩu chỉ ở `backend/.env` local; nếu mã công trình tồn tại mà không có marker demo, script dừng, không ghi đè.
 
 Các kiểm tra frontend Device đã thực hiện ở chặng trước:
 
@@ -46,4 +49,4 @@ Các kiểm tra frontend Device đã thực hiện ở chặng trước:
 
 - Smoke test: chạy backend và Vite theo README (mặc định API `localhost:3000`, Vite `localhost:5173`), rồi chạy `node frontend/test/devices.browser.cjs`. Cần migration/seed và mật khẩu demo trong `backend/.env` local, ít nhất hai công trình; một công trình có Area và System. Node phải tìm được gói Playwright/Chromium đã cài ngoài repo; nếu không, đặt `PLAYWRIGHT_MODULE` tới thư mục gói Playwright và `CHROME_EXECUTABLE` tới Chrome local. Có thể đổi URL bằng `DEVICE_WEB_URL`/`DEVICE_API_URL`. Không thêm dependency repo chỉ cho smoke test; test tạo rồi dọn riêng Device của lượt chạy.
 - Chưa kiểm thử tương tác cảm ứng trên điện thoại vật lý, nhiều người dùng cùng sửa thiết bị hoặc toàn bộ luồng Task; viewport 390 px không thay thế thiết bị thật.
-- Chặng kế tiếp: frontend cổng/kết nối và tra cứu camera/AP/ổ mạng. Chưa kiểm thử UI connections vì chưa triển khai; chưa đo tải lớn. IP/MAC/VLAN/PoE là thông tin khai báo, không xác nhận cấu hình hay trạng thái thiết bị thật. Quy tắc profile chỉ cho CAMERA/AP và metadata VLAN/PoE chỉ cho SWITCH được service kiểm tra; SQL/import ngoài API hiện không được DB cưỡng chế cho hai quy tắc loại này. Một cổng CAMERA/AP và đủ hai endpoint được kiểm soát bởi service transaction/ràng buộc DB; sửa SQL trực tiếp ngoài API không được hỗ trợ.
+- Chặng kế tiếp: smoke test Chrome với API local cho ba đường camera, rewire/409, cảnh báo IP, hai vai trò, reload và 390 px; dùng mã thử riêng rồi dọn đúng thứ tự dây → cổng → thiết bị. Chưa đo tải lớn. IP/MAC/VLAN/PoE là thông tin khai báo, không xác nhận cấu hình hay trạng thái thiết bị thật. Quy tắc profile chỉ cho CAMERA/AP và metadata VLAN/PoE chỉ cho SWITCH được service kiểm tra; SQL/import ngoài API hiện không được DB cưỡng chế cho hai quy tắc loại này. Một cổng CAMERA/AP và đủ hai endpoint được kiểm soát bởi service transaction/ràng buộc DB; sửa SQL trực tiếp ngoài API không được hỗ trợ.
