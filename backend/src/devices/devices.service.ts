@@ -1,12 +1,15 @@
 import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
-import { DataSource, EntityManager, In } from 'typeorm';
+import { DataSource, EntityManager, In, Not } from 'typeorm';
 import { AuthenticatedUser } from '../auth/auth.types';
 import { ProjectArea } from '../projects/project-area.entity';
 import { ProjectSystem } from '../projects/project-system.entity';
 import { Project } from '../projects/project.entity';
 import { UserRole } from '../users/user-role.enum';
 import { DeviceType } from './device-type.enum';
+import { DevicePort } from '../connections/device-port.entity';
 import { CreateProjectDeviceDto, UpdateProjectDeviceDto } from './dto/device.dto';
+import { PutDeviceNetworkProfileDto } from './dto/network-profile.dto';
+import { DeviceNetworkProfile } from './device-network-profile.entity';
 import { ProjectDevice, ProjectDeviceResponse } from './project-device.entity';
 import { ProjectDeviceSystem } from './project-device-system.entity';
 
@@ -29,6 +32,31 @@ export class DevicesService {
     return this.database.transaction('REPEATABLE READ', async (manager) => {
       const device = await this.requireDevice(manager, projectId, deviceId);
       return (await this.responses(manager, projectId, [device]))[0];
+    });
+  }
+
+  async getNetworkProfile(projectId: string, deviceId: string) {
+    return this.database.transaction('REPEATABLE READ', async (manager) => {
+      await this.requireNetworkDevice(manager, projectId, deviceId);
+      const profile = await manager.getRepository(DeviceNetworkProfile).findOneBy({ projectId, deviceId });
+      return profile ? this.networkProfileResponse(manager, profile) : null;
+    });
+  }
+
+  async putNetworkProfile(projectId: string, deviceId: string, dto: PutDeviceNetworkProfileDto, user: AuthenticatedUser) {
+    return this.write(projectId, user, async (manager) => {
+      await this.requireNetworkDevice(manager, projectId, deviceId);
+      if (dto.addressMode === undefined || dto.ipAddress === undefined || dto.macAddress === undefined) {
+        throw new BadRequestException('addressMode, ipAddress and macAddress are all required');
+      }
+      if (dto.addressMode === null && dto.ipAddress !== null) throw new BadRequestException('ipAddress requires addressMode');
+      const repo = manager.getRepository(DeviceNetworkProfile);
+      const profile = await repo.findOneBy({ projectId, deviceId }) ?? repo.create({ projectId, deviceId });
+      profile.addressMode = dto.addressMode;
+      profile.ipAddress = dto.ipAddress;
+      profile.macAddress = dto.macAddress;
+      await repo.save(profile);
+      return this.networkProfileResponse(manager, profile);
     });
   }
 
@@ -80,7 +108,11 @@ export class DevicesService {
       if (await devices.countBy({ projectId, rackId: deviceId })) {
         throw new ConflictException('Rack has dependent devices');
       }
+      if (await manager.getRepository(DevicePort).countBy({ projectId, deviceId })) {
+        throw new ConflictException('Device has ports');
+      }
       // These are the device's own memberships, not independent dependent data.
+      await manager.getRepository(DeviceNetworkProfile).delete({ projectId, deviceId });
       await manager.getRepository(ProjectDeviceSystem).delete({ projectId, deviceId });
       await devices.delete({ projectId, id: deviceId });
     });
@@ -118,6 +150,19 @@ export class DevicesService {
     const device = await manager.getRepository(ProjectDevice).findOneBy({ projectId, id: deviceId });
     if (!device) throw new NotFoundException('Device not found');
     return device;
+  }
+
+  private async requireNetworkDevice(manager: EntityManager, projectId: string, deviceId: string): Promise<ProjectDevice> {
+    const device = await this.requireDevice(manager, projectId, deviceId);
+    if (![DeviceType.CAMERA, DeviceType.AP].includes(device.type)) throw new BadRequestException('Network profile is only for CAMERA/AP');
+    return device;
+  }
+
+  private async networkProfileResponse(manager: EntityManager, profile: DeviceNetworkProfile) {
+    const duplicateIp = profile.ipAddress !== null && await manager.getRepository(DeviceNetworkProfile).exist({
+      where: { projectId: profile.projectId, deviceId: Not(profile.deviceId), ipAddress: profile.ipAddress },
+    });
+    return { ...profile, warnings: duplicateIp ? ['DUPLICATE_IP_IN_PROJECT'] : [] };
   }
 
   private async validateLocation(manager: EntityManager, device: ProjectDevice): Promise<void> {

@@ -10,6 +10,8 @@ export class DevicePort {
   @Column({ name: 'device_id', type: 'uuid' }) deviceId!: string;
   @Column({ type: 'varchar' }) code!: string;
   @Column({ type: 'text', nullable: true }) description!: string | null;
+  @Column({ name: 'access_vlan_id', type: 'integer', nullable: true }) accessVlanId!: number | null;
+  @Column({ name: 'poe_enabled', type: 'boolean', nullable: true }) poeEnabled!: boolean | null;
   @CreateDateColumn({ name: 'created_at', type: 'timestamptz' }) createdAt!: Date;
   @UpdateDateColumn({ name: 'updated_at', type: 'timestamptz' }) updatedAt!: Date;
 }

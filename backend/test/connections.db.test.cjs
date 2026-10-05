@@ -390,11 +390,13 @@ test('Connections: real PostgreSQL constraints/concurrency/rollback, Nest HTTP a
       await app.close(); app = undefined;
     });
 
-    await t.test('every connection has two endpoints; isolated down/up only removes the new pair constraint', async () => {
+    await t.test('every connection has two endpoints; isolated down/up of pair constraint preserves older tables', async () => {
       const invalid = await db.query('SELECT c.id FROM physical_connections c LEFT JOIN connection_endpoints e ON e.connection_id=c.id GROUP BY c.id HAVING count(e.port_id) <> 2');
       assert.deepEqual(invalid, []);
       const countOld = async () => (await db.query('SELECT (SELECT count(*)::int FROM users) AS users, (SELECT count(*)::int FROM projects) AS projects, (SELECT count(*)::int FROM project_devices) AS devices'))[0];
       const before = await countOld();
+      assert.equal((await db.query('SELECT name FROM migrations ORDER BY id DESC LIMIT 1'))[0].name, 'AddDeviceNetworkProfileAndPortMetadata1796000000000');
+      await db.undoLastMigration();
       assert.equal((await db.query('SELECT name FROM migrations ORDER BY id DESC LIMIT 1'))[0].name, 'EnforceConnectionEndpointPair1795000000000');
       await db.undoLastMigration();
       assert.equal((await db.query("SELECT to_regclass('public.device_ports') AS table_name"))[0].table_name, 'device_ports');

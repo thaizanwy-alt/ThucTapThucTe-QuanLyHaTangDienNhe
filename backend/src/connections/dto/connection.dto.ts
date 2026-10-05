@@ -1,5 +1,5 @@
 import { Transform, Type } from 'class-transformer';
-import { IsDefined, IsEnum, IsInt, IsObject, IsOptional, IsString, IsUUID, Matches, Max, Min, ValidateIf, ValidateNested } from 'class-validator';
+import { IsBoolean, IsDefined, IsEnum, IsInt, IsObject, IsOptional, IsString, IsUUID, Matches, Max, Min, ValidateIf, ValidateNested } from 'class-validator';
 import { normalizeCode, trimText } from '../../projects/dto/dto.transforms';
 import { ConnectionKind, PortSide } from '../connection.enums';
 
@@ -8,11 +8,15 @@ const CODE_PATTERN = /^[A-Z0-9]+(?:-[A-Z0-9]+)*$/;
 export class CreatePortDto {
   @Transform(normalizeCode) @IsDefined() @IsString() @Matches(CODE_PATTERN) code!: string;
   @IsOptional() @Transform(trimText) @IsString() description?: string | null;
+  @IsOptional() @IsInt() @Min(1) @Max(4094) accessVlanId?: number | null;
+  @IsOptional() @IsBoolean() poeEnabled?: boolean | null;
 }
 export class UpdatePortDto {
   @ValidateIf((_object, value) => value !== undefined)
   @Transform(normalizeCode) @IsDefined() @IsString() @Matches(CODE_PATTERN) code?: string;
   @IsOptional() @Transform(trimText) @IsString() description?: string | null;
+  @IsOptional() @IsInt() @Min(1) @Max(4094) accessVlanId?: number | null;
+  @IsOptional() @IsBoolean() poeEnabled?: boolean | null;
 }
 export class EndpointDto {
   @IsDefined() @IsUUID() portId!: string;

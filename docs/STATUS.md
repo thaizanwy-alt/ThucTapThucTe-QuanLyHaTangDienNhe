@@ -4,7 +4,7 @@ Cập nhật ngày 05/10/2026. Hướng dẫn cài/chạy: [README.md](../README
 
 ## Phạm vi
 
-- Project/Area/System, Task và danh mục Device đã có backend/frontend. Chặng hiện tại bổ sung riêng backend cổng/kết nối vật lý; chưa có UI cổng/kết nối.
+- Project/Area/System, Task và danh mục Device đã có backend/frontend. Chặng hiện tại có backend cổng/kết nối và hồ sơ mạng khai báo; chưa có UI cổng/kết nối.
 
 ## Đã triển khai
 
@@ -19,14 +19,18 @@ Cập nhật ngày 05/10/2026. Hướng dẫn cài/chạy: [README.md](../README
 - Backend cổng/kết nối có DevicePort, PhysicalConnection và ConnectionEndpoint; FK ghép cùng Project, RESTRICT, unique từng mặt cổng. Khóa Project trong transaction chống tranh cổng và tạo nhiều port CAMERA/AP; rewire kiểm tra expectedVersion, lỗi rollback giữ nguyên dây cũ. Device còn port trả 409, rollback cả bước dọn liên kết System.
 - Migration `1795000000000-EnforceConnectionEndpointPair` thêm constraint trigger kiểm tra tại COMMIT: connection còn tồn tại phải có đúng endpoint A và B; transaction tạo/xóa dây đầy đủ vẫn hợp lệ.
 - Trace ổ mạng bắt đầu ở REAR, CAMERA/AP ở SINGLE; hỗ trợ trực tiếp, qua panel, qua ổ mạng rồi panel và đường thiếu đoạn. Response có Area/rack, endpoint/version; danh sách port có sides với connectionId hoặc null. complete chỉ là đã khai báo đường tới switch, không xác nhận online.
-- Chưa làm NetworkProfile/VLAN/PoE, frontend/sơ đồ kết nối, checklist, nghiệm thu hoặc bảo trì. Giữ nguyên luồng Task; DevicePanel dùng React key riêng để không trùng TaskPanel.
+- Backend DeviceNetworkProfile cho CAMERA/AP dùng GET (200 `null` nếu chưa có) và PUT đủ `addressMode`/`ipAddress`/`macAddress`; IP nhập tay trùng trong Project chỉ trả cảnh báo `DUPLICATE_IP_IN_PROJECT`. Switch port có `accessVlanId` 1–4094/null và `poeEnabled` boolean/null; trace trả hồ sơ mạng và VLAN/PoE của switch port cuối đường. Xóa Device còn port trả 409; nếu xóa được, profile và liên kết System được dọn cùng transaction.
+- Chưa làm frontend/sơ đồ kết nối, giám sát online, checklist, nghiệm thu hoặc bảo trì. Giữ nguyên luồng Task; DevicePanel dùng React key riêng để không trùng TaskPanel.
 
 ## Đã xác minh local
 
 - Chặng connections: `npm run migration:run -w backend` và `npm run migration:show -w backend` đạt; cả 6 migration đều [X], gồm `1794000000000-CreateDeviceConnections` và `1795000000000-EnforceConnectionEndpointPair`. Không revert DB đang dùng.
-- `npm run test -w backend`: 24/24; `npm run test:db -w backend`: 26/26 (gồm hồi quy Task/Device). Riêng `npm run test:connections:db -w backend`: 16/16, kiểm tra PostgreSQL concurrency, FK, endpoint A/B tại COMMIT, rewire đảo A/B và rollback, UUID hoa/thường, ba đường trace, HTTP 400/401/403/404/409 và Nest khởi động thật với health database connected.
+- Chặng hồ sơ mạng: migration `1796000000000-AddDeviceNetworkProfileAndPortMetadata` đã áp dụng trên DB local; `migration:show` đạt 7/7. Không revert DB đang dùng.
+- `npm run test -w backend`: 26/26; `npm run test:db -w backend`: 34/34 (gồm hồi quy Task/Device/Connections). Test PostgreSQL/HTTP hồ sơ mạng riêng 8/8: GET `null`, PUT đủ key, hai PUT đồng thời cùng Device trả 200 và còn một profile, IP trùng khác Project không cảnh báo, VLAN/PoE theo switch port cuối cho đường trực tiếp/qua panel/qua ổ mạng và sau rewire, quyền và cross-project, xóa rollback, Nest boot với health database connected. Build toàn repo đạt exit code 0.
+- Test connections ở chặng trước: 16/16, kiểm tra PostgreSQL concurrency, FK, endpoint A/B tại COMMIT, rewire đảo A/B và rollback, UUID hoa/thường, ba đường trace, HTTP 400/401/403/404/409. Test hồi quy đã được chạy lại trong bộ DB 34/34.
 - Test connections tự tạo/xóa DB `connections_test_<uuid>`, cần tài khoản PostgreSQL local có quyền CREATEDB; down/up chỉ diễn ra tại DB tạm, giữ nguyên bảng/dữ liệu User/Project/Device cũ trong DB đó. Dùng cấu hình kết nối local, không ghi bí mật. Build toàn repo đạt exit code 0.
 - API dưới `/projects/:projectId`: GET/POST `devices/:deviceId/ports`, PATCH/DELETE `devices/:deviceId/ports/:portId`; GET/POST `connections` (GET lọc deviceId), DELETE `connections/:connectionId`, POST `connections/:connectionId/rewire` (200), GET `connections/trace?deviceCode=...`. MANAGER ghi, cả hai vai trò đọc; POST tạo trả 201, DELETE 204. Rewire nhận đủ kind/a/b/expectedVersion, không sửa dây khác.
+- API hồ sơ mạng: GET/PUT `/projects/:projectId/devices/:deviceId/network-profile`. GET trả JSON `null` nếu chưa có; PUT trả profile và mảng `warnings`. MANAGER ghi, TECHNICIAN đọc. Port API hiện có nhận thêm `accessVlanId` và `poeEnabled` cho SWITCH.
 
 Các kiểm tra frontend Device đã thực hiện ở chặng trước:
 
@@ -42,4 +46,4 @@ Các kiểm tra frontend Device đã thực hiện ở chặng trước:
 
 - Smoke test: chạy backend và Vite theo README (mặc định API `localhost:3000`, Vite `localhost:5173`), rồi chạy `node frontend/test/devices.browser.cjs`. Cần migration/seed và mật khẩu demo trong `backend/.env` local, ít nhất hai công trình; một công trình có Area và System. Node phải tìm được gói Playwright/Chromium đã cài ngoài repo; nếu không, đặt `PLAYWRIGHT_MODULE` tới thư mục gói Playwright và `CHROME_EXECUTABLE` tới Chrome local. Có thể đổi URL bằng `DEVICE_WEB_URL`/`DEVICE_API_URL`. Không thêm dependency repo chỉ cho smoke test; test tạo rồi dọn riêng Device của lượt chạy.
 - Chưa kiểm thử tương tác cảm ứng trên điện thoại vật lý, nhiều người dùng cùng sửa thiết bị hoặc toàn bộ luồng Task; viewport 390 px không thay thế thiết bị thật.
-- Chặng kế tiếp: (2) backend NetworkProfile GET/PUT và VLAN/PoE khai báo trên switch port; sau đó (3) frontend cổng/kết nối và tra cứu camera/AP/ổ mạng. Chưa kiểm thử UI connections vì chưa triển khai; chưa đo tải lớn. Một cổng CAMERA/AP và đủ hai endpoint được kiểm soát bởi service transaction; sửa SQL trực tiếp ngoài API không được hỗ trợ.
+- Chặng kế tiếp: frontend cổng/kết nối và tra cứu camera/AP/ổ mạng. Chưa kiểm thử UI connections vì chưa triển khai; chưa đo tải lớn. IP/MAC/VLAN/PoE là thông tin khai báo, không xác nhận cấu hình hay trạng thái thiết bị thật. Quy tắc profile chỉ cho CAMERA/AP và metadata VLAN/PoE chỉ cho SWITCH được service kiểm tra; SQL/import ngoài API hiện không được DB cưỡng chế cho hai quy tắc loại này. Một cổng CAMERA/AP và đủ hai endpoint được kiểm soát bởi service transaction/ràng buộc DB; sửa SQL trực tiếp ngoài API không được hỗ trợ.

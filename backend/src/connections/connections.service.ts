@@ -6,6 +6,7 @@ import { Project } from '../projects/project.entity';
 import { ProjectArea } from '../projects/project-area.entity';
 import { ProjectDevice } from '../devices/project-device.entity';
 import { DeviceType } from '../devices/device-type.enum';
+import { DeviceNetworkProfile } from '../devices/device-network-profile.entity';
 import { DevicePort } from './device-port.entity';
 import { PhysicalConnection } from './physical-connection.entity';
 import { ConnectionEndpoint } from './connection-endpoint.entity';
@@ -83,25 +84,37 @@ export class ConnectionsService {
     return this.write(projectId, user, async m => {
       const device = await this.device(m, projectId, deviceId);
       if (!faces(device.type).length) throw new BadRequestException('Rack cannot have ports');
+      this.validateSwitchMetadata(device, dto);
       const repo = m.getRepository(DevicePort);
       if ([DeviceType.CAMERA, DeviceType.AP].includes(device.type) && await repo.countBy({ projectId, deviceId })) {
         throw new ConflictException('Camera/AP can have at most one port');
       }
       const port = await repo.save(repo.create({ projectId: idKey(projectId), deviceId: device.id,
-        code: dto.code.trim().toUpperCase(), description: dto.description?.trim() || null }));
+        code: dto.code.trim().toUpperCase(), description: dto.description?.trim() || null,
+        accessVlanId: dto.accessVlanId ?? null, poeEnabled: dto.poeEnabled ?? null }));
       return this.portResponse(m, port, device.type);
     });
   }
   async updatePort(projectId: string, deviceId: string, portId: string, dto: UpdatePortDto, user: AuthenticatedUser) {
     return this.write(projectId, user, async m => {
-      if (dto.code === undefined && dto.description === undefined) throw new BadRequestException('At least one editable field is required');
+      if (dto.code === undefined && dto.description === undefined && dto.accessVlanId === undefined && dto.poeEnabled === undefined) {
+        throw new BadRequestException('At least one editable field is required');
+      }
       const device = await this.device(m, projectId, deviceId);
+      this.validateSwitchMetadata(device, dto);
       const port = await this.port(m, projectId, deviceId, portId);
       if (dto.code !== undefined) port.code = dto.code.trim().toUpperCase();
       if (dto.description !== undefined) port.description = dto.description?.trim() || null;
+      if (dto.accessVlanId !== undefined) port.accessVlanId = dto.accessVlanId;
+      if (dto.poeEnabled !== undefined) port.poeEnabled = dto.poeEnabled;
       await m.getRepository(DevicePort).save(port);
       return this.portResponse(m, port, device.type);
     });
+  }
+  private validateSwitchMetadata(device: ProjectDevice, dto: CreatePortDto | UpdatePortDto) {
+    if (device.type !== DeviceType.SWITCH && (dto.accessVlanId != null || dto.poeEnabled != null)) {
+      throw new BadRequestException('VLAN and PoE are only allowed on switch ports');
+    }
   }
   async deletePort(projectId: string, deviceId: string, portId: string, user: AuthenticatedUser) {
     return this.write(projectId, user, async m => {
@@ -201,7 +214,8 @@ export class ConnectionsService {
   }
   private endpointResponse(g: Graph, end: ConnectionEndpoint) {
     const port = g.ports.get(end.portId)!;
-    return { portId: port.id, side: end.side, port: { id: port.id, code: port.code, description: port.description },
+    return { portId: port.id, side: end.side, port: { id: port.id, code: port.code, description: port.description,
+      accessVlanId: port.accessVlanId, poeEnabled: port.poeEnabled },
       device: this.deviceSummary(g, port.deviceId) };
   }
   private connectionResponse(g: Graph, connection: PhysicalConnection) {
@@ -217,6 +231,8 @@ export class ConnectionsService {
       if (!device) throw new NotFoundException('Device not found');
       if (![DeviceType.NETWORK_OUTLET, DeviceType.CAMERA, DeviceType.AP].includes(device.type)) throw new BadRequestException('Trace starts at an outlet, camera or AP');
       const source = this.deviceSummary(g, device.id);
+      const networkProfile = device.type === DeviceType.NETWORK_OUTLET ? null :
+        await m.getRepository(DeviceNetworkProfile).findOneBy({ projectId, deviceId: device.id });
       const paths = [...g.ports.values()].filter(p => p.deviceId === device.id).map(port => {
         let portId = port.id;
         let side = device.type === DeviceType.NETWORK_OUTLET ? PortSide.REAR : PortSide.SINGLE;
@@ -231,15 +247,16 @@ export class ConnectionsService {
           const connection = g.connections.get(end.connectionId)!;
           const to = this.endpointResponse(g, other);
           segments.push({ connectionId: connection.id, kind: connection.kind, version: connection.version, from: this.endpointResponse(g, end), to });
-          if (to.device.type === DeviceType.SWITCH) return { port, segments, complete: true, missing: null };
+          if (to.device.type === DeviceType.SWITCH) return { port, segments, complete: true, missing: null,
+            switchPort: { portId: other.portId, accessVlanId: to.port.accessVlanId, poeEnabled: to.port.poeEnabled } };
           portId = other.portId;
           if (to.device.type === DeviceType.NETWORK_OUTLET && other.side === PortSide.FRONT) side = PortSide.REAR;
           else if (to.device.type === DeviceType.PATCH_PANEL && other.side === PortSide.REAR) side = PortSide.FRONT;
           else break;
         }
-        return { port, segments, complete: false, missing: { portId, side } };
+        return { port, segments, complete: false, missing: { portId, side }, switchPort: null };
       });
-      return { device: source, area: source.area, paths };
+      return { device: source, area: source.area, networkProfile, paths };
     });
   }
 }

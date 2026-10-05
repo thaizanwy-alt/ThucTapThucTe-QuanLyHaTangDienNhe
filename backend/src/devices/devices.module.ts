@@ -6,11 +6,13 @@ import { ProjectSystem } from '../projects/project-system.entity';
 import { Project } from '../projects/project.entity';
 import { ProjectDevice } from './project-device.entity';
 import { ProjectDeviceSystem } from './project-device-system.entity';
+import { DeviceNetworkProfile } from './device-network-profile.entity';
+import { DevicePort } from '../connections/device-port.entity';
 import { DevicesController } from './devices.controller';
 import { DevicesService } from './devices.service';
 
 @Module({
-  imports: [TypeOrmModule.forFeature([ProjectDevice, ProjectDeviceSystem, Project, ProjectArea, ProjectSystem]), AuthModule],
+  imports: [TypeOrmModule.forFeature([ProjectDevice, ProjectDeviceSystem, DeviceNetworkProfile, DevicePort, Project, ProjectArea, ProjectSystem]), AuthModule],
   controllers: [DevicesController],
   providers: [DevicesService],
 })
