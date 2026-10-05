@@ -12,6 +12,7 @@ import type { User } from './api/auth';
 import TaskPanel from './TaskPanel';
 import DevicePanel from './DevicePanel';
 import ConnectionPanel from './ConnectionPanel';
+import RackWorkspace from './RackWorkspace';
 
 interface Props {
   token: string;
@@ -134,6 +135,8 @@ export default function ProjectWorkspace({ token, user, onSignOut }: Props) {
   const [areas, setAreas] = useState<ProjectArea[]>([]);
   const [systems, setSystems] = useState<ProjectSystem[]>([]);
   const [deviceRevision, setDeviceRevision] = useState(0);
+  const [rackScreenProjectId, setRackScreenProjectId] = useState<string | null>(null);
+  const rackScreen = selectedId !== null && rackScreenProjectId === selectedId;
   const [loadedDetailId, setLoadedDetailId] = useState<string | null>(null);
   const [loadingProjects, setLoadingProjects] = useState(true);
   const [loadingDetail, setLoadingDetail] = useState(false);
@@ -329,7 +332,8 @@ export default function ProjectWorkspace({ token, user, onSignOut }: Props) {
             {!manager && <div className="read-only-note">Bạn chỉ có thể cập nhật công việc được giao; hồ sơ công trình ở chế độ chỉ đọc.</div>}
             {notice && <div className="success-note" role="status">{notice}<button onClick={() => setNotice('')} aria-label="Đóng thông báo">×</button></div>}
             {error && <div className="error-note" role="alert">{error}<button onClick={() => setError('')} aria-label="Đóng thông báo">×</button></div>}
-            {detailRefreshFailed ? <div className="detail-loading">Dữ liệu chưa được tải lại.</div> : !detailReady ? <div className="detail-loading" role="status"><span className="spinner" />Đang tải cấu trúc công trình…</div> : <div className="detail-grid">
+            {detailReady && <RackWorkspace key={`racks:${selectedProject.id}`} token={token} user={user} projectId={selectedProject.id} areas={areas} systems={systems} deviceRevision={deviceRevision} expanded={rackScreen} onOpen={() => setRackScreenProjectId(selectedProject.id)} onBack={() => setRackScreenProjectId(null)} onSignOut={onSignOut} />}
+            {detailRefreshFailed ? <div className="detail-loading">Dữ liệu chưa được tải lại.</div> : !detailReady ? <div className="detail-loading" role="status"><span className="spinner" />Đang tải cấu trúc công trình…</div> : !rackScreen && <div className="detail-grid">
               <section className="structure-panel">
                 <div className="panel-heading"><div><span className="section-kicker">Không gian</span><h3>Tầng và phòng</h3></div>{manager && <div className="menu-wrap"><button className="button button-small button-quiet" onClick={() => beginArea('FLOOR')}>＋ Tầng</button></div>}</div>
                 {areas.length === 0 ? <div className="empty-panel"><span className="empty-mark">⌂</span><h4>Chưa có tầng hoặc phòng</h4><p>Thêm tầng trước, sau đó đặt các phòng bên dưới.</p>{manager && <button className="text-button" onClick={() => beginArea('FLOOR')}>Thêm tầng đầu tiên</button>}</div> : <div className="area-tree">
@@ -352,9 +356,9 @@ export default function ProjectWorkspace({ token, user, onSignOut }: Props) {
                 </li>)}</ul>}
               </section>
             </div>}
-            {detailReady && <TaskPanel key={selectedProject.id} token={token} user={user} projectId={selectedProject.id} systems={systems} areas={areas} onSignOut={onSignOut} />}
-            {detailReady && <DevicePanel key={`devices:${selectedProject.id}`} token={token} user={user} projectId={selectedProject.id} systems={systems} areas={areas} onSignOut={onSignOut} onDeviceChanged={onDeviceChanged} />}
-            {detailReady && <ConnectionPanel key={`connections:${selectedProject.id}`} token={token} user={user} projectId={selectedProject.id} deviceRevision={deviceRevision} onSignOut={onSignOut} />}
+            {detailReady && !rackScreen && <TaskPanel key={selectedProject.id} token={token} user={user} projectId={selectedProject.id} systems={systems} areas={areas} onSignOut={onSignOut} />}
+            {detailReady && !rackScreen && <DevicePanel key={`devices:${selectedProject.id}`} token={token} user={user} projectId={selectedProject.id} systems={systems} areas={areas} onSignOut={onSignOut} onDeviceChanged={onDeviceChanged} />}
+            {detailReady && !rackScreen && <ConnectionPanel key={`connections:${selectedProject.id}`} token={token} user={user} projectId={selectedProject.id} deviceRevision={deviceRevision} onSignOut={onSignOut} />}
           </>}
         </section>
       </main>

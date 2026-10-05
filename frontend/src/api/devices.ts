@@ -1,6 +1,7 @@
 import { apiRequest } from './client';
 
-export type DeviceType = 'RACK' | 'PATCH_PANEL' | 'SWITCH' | 'NETWORK_OUTLET' | 'AP' | 'CAMERA';
+export type DeviceType = 'RACK' | 'PATCH_PANEL' | 'SWITCH' | 'NETWORK_OUTLET' | 'AP' | 'CAMERA'
+  | 'UPS' | 'PDU' | 'NVR' | 'ROUTER' | 'ODF' | 'CABLE_MANAGER' | 'SHELF';
 
 export interface ProjectDevice {
   id: string;
@@ -16,6 +17,11 @@ export interface ProjectDevice {
   areaId: string | null;
   rackId: string | null;
   capacityU: number | null;
+  rackRole: 'MAIN' | 'SUB' | null;
+  parentRackId: string | null;
+  mountMode: 'U' | 'ZERO_U' | null;
+  startU: number | null;
+  heightU: number | null;
   systemIds: string[];
   effectiveAreaId: string | null;
   createdAt: string;

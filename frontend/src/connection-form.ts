@@ -4,6 +4,8 @@ import type { ProjectDevice } from './api/devices';
 export interface FaceOption { device: ProjectDevice; port: DevicePort; side: PortSide; key: string }
 
 export const faceKey = (portId: string, side: PortSide) => `${portId}:${side}`;
+export const supportsDevicePorts = (type: ProjectDevice['type']) =>
+  ['NETWORK_OUTLET', 'PATCH_PANEL', 'SWITCH', 'AP', 'CAMERA'].includes(type);
 
 export function availableFaces(devices: ProjectDevice[], ports: DevicePort[], editingConnectionId?: string): FaceOption[] {
   const byId = new Map(devices.map(device => [device.id.toLowerCase(), device]));

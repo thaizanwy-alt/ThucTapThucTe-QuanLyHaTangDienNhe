@@ -356,3 +356,98 @@ dd { margin: 0; font-size: 15px; font-weight: 600; overflow-wrap: anywhere; }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { scroll-behavior: auto !important; animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; }
 }
+
+/* Rack layout: front elevation, not a physical network topology. */
+.rack-overview-card { margin: 0 0 22px; padding: 20px; border: 1px solid var(--line); border-left: 4px solid var(--blueprint); background: var(--surface); border-radius: 5px; }
+.rack-card-heading { display: flex; gap: 16px; align-items: center; }
+.rack-card-mark { color: var(--blueprint); font-size: 36px; line-height: 1; }
+.rack-card-heading > div { flex: 1; min-width: 0; }
+.rack-card-heading h3, .rack-screen-heading h3 { margin: 4px 0; font-size: 22px; letter-spacing: -.025em; }
+.rack-card-heading p, .rack-screen-heading p { margin: 6px 0 0; color: var(--muted); font-size: 13px; line-height: 1.5; }
+.rack-workspace { margin: 16px 0; }
+.rack-screen-heading { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 22px; }
+.rack-screen-grid { display: grid; grid-template-columns: 184px minmax(0, 1fr); gap: 22px; align-items: start; }
+.rack-tree { border-right: 1px solid var(--line); padding-right: 16px; }
+.rack-tree h4 { font-size: 12px; color: var(--muted); font-weight: 600; margin: 0 0 14px; }
+.rack-tree button { display: flex; flex-direction: column; text-align: left; width: 100%; gap: 5px; border: 1px solid transparent; border-radius: 4px; padding: 12px; background: transparent; cursor: pointer; overflow-wrap: anywhere; }
+.rack-tree button:hover { background: #e9eee4; }
+.rack-tree button.active { background: #e4eddf; border-color: #bacbb9; color: var(--forest-dark); }
+.rack-tree button small { font-size: 10px; letter-spacing: .12em; color: var(--blueprint); }
+.rack-tree button strong { font-size: 13px; }
+.rack-tree button span { font-size: 12px; color: var(--muted); line-height: 1.4; }
+.rack-tree-children { margin: 6px 0 18px 14px; padding-left: 9px; border-left: 1px dashed #b8c8bf; }
+.rack-unclassified { margin-top: 22px; }
+.rack-main-view, .rack-accessories { min-width: 0; }
+.rack-mobile-picker { display: none; }
+.rack-title { display: flex; justify-content: space-between; align-items: start; gap: 14px; }
+.rack-title h4 { font-size: 25px; letter-spacing: -.03em; margin: 7px 0; overflow-wrap: anywhere; }
+.rack-title p { margin: 0; color: var(--muted); font-size: 13px; }
+.rack-actions { display: flex; flex-wrap: wrap; gap: 8px; justify-content: flex-end; }
+.rack-location { display: grid; grid-template-columns: 1fr 1.5fr; gap: 16px; border-top: 1px solid var(--line); padding-top: 18px; margin: 22px 0; font-size: 13px; }
+.rack-location dt { color: var(--muted); font-size: 11px; margin-bottom: 7px; }
+.rack-location dd { margin: 0; line-height: 1.6; overflow-wrap: anywhere; }
+.rack-location dd span { display: inline-block; margin: 0 7px 6px 0; padding: 3px 7px; border: 1px solid var(--line); border-radius: 3px; background: var(--surface); font-size: 12px; }
+.rack-layout-columns { display: grid; grid-template-columns: minmax(230px, 1.35fr) minmax(170px, 1fr); gap: 20px; align-items: start; }
+.rack-elevation-panel { min-width: 0; }
+.rack-elevation-heading { display: flex; justify-content: space-between; gap: 10px; margin-bottom: 12px; align-items: center; }
+.rack-elevation-heading h4 { margin: 0; font-size: 14px; }
+.rack-elevation-heading > span { font-size: 11px; color: var(--muted); }
+.rack-elevation { display: grid; grid-template-columns: 38px minmax(0, 1fr); background: #e0e6df; border: 1px solid #a8b8ab; border-radius: 3px; padding: 12px 14px 12px 0; gap: 0 7px; }
+.rack-unit-number { grid-column: 1; font: 11px/1.2 ui-monospace, Consolas, monospace; color: #64756b; align-self: center; text-align: right; }
+.rack-empty-unit { grid-column: 2; display: flex; align-items: center; justify-content: center; border: 1px solid #cad4c8; border-top: 0; background: repeating-linear-gradient(90deg, #f0f3ec 0, #f0f3ec 4px, #eaf0e7 4px, #eaf0e7 5px); }
+.rack-empty-unit span { font-size: 10px; letter-spacing: .09em; color: #97a794; }
+.rack-mounted { grid-column: 2; min-width: 0; min-height: 0; padding: 2px 8px; border: 1px solid #526e68; background: #2e4842; color: #fffefa; cursor: pointer; display: grid; grid-template-columns: minmax(0, 1fr) auto; align-content: center; gap: 1px 6px; text-align: left; box-shadow: inset 7px 0 #1d302d, inset -7px 0 #1d302d; }
+.rack-mounted:hover { background: #395d54; border-color: #99b995; }
+.rack-mounted strong { font: 600 11px/1.35 ui-monospace, Consolas, monospace; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rack-mounted > span { grid-row: 2; grid-column: 1; font-size: 10px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rack-mounted small { grid-row: 1 / span 2; grid-column: 2; align-self: center; font-size: 9px; max-width: 100px; overflow: hidden; text-overflow: ellipsis; }
+.rack-mounted-ups, .rack-mounted-nvr { background: #3b474f; }
+.rack-mounted-patch_panel, .rack-mounted-odf { background: #456c7d; }
+.rack-mounted-cable_manager, .rack-mounted-shelf { background: #6b7569; }
+.rack-bottom-label { margin: 8px 0; text-align: right; font-size: 11px; color: var(--muted); }
+.rack-pages { display: flex; gap: 8px; justify-content: space-between; align-items: center; font-size: 11px; margin-bottom: 12px; }
+.rack-pages .text-button { font-size: 11px; }
+.rack-side-list { background: var(--surface); border: 1px solid var(--line); border-radius: 4px; padding: 16px; margin-bottom: 16px; }
+.rack-side-list h4 { margin: 0; font-size: 13px; display: flex; justify-content: space-between; gap: 10px; }
+.rack-side-list h4 span { color: var(--blueprint); }
+.rack-side-list p { font-size: 12px; color: var(--muted); line-height: 1.5; margin: 7px 0; }
+.rack-side-list ul { list-style: none; padding: 0; margin: 10px 0 0; }
+.rack-side-list li + li { border-top: 1px solid var(--line); }
+.rack-side-list li button { display: flex; flex-direction: column; align-items: start; width: 100%; border: 0; background: transparent; cursor: pointer; padding: 10px 0; gap: 5px; text-align: left; overflow-wrap: anywhere; }
+.rack-side-list li button strong { font-size: 12px; color: var(--forest); }
+.rack-side-list li button span { font-size: 12px; }
+.rack-side-list li button small { font-size: 11px; color: var(--muted); }
+.rack-drawer-backdrop { display: flex; justify-content: flex-end; align-items: stretch; padding: 0; }
+.rack-drawer { width: min(520px, 100%); max-height: 100dvh; border-radius: 0; margin: 0; overflow-y: auto; }
+.rack-area-choices { max-height: 260px; overflow-y: auto; padding: 12px; border: 1px solid var(--line); }
+.rack-area-choices label { display: flex; flex-direction: row; align-items: center; gap: 10px; margin: 10px 0; font-size: 12px; }
+.form-stack .rack-area-choices input { width: 18px; min-height: 18px; height: 18px; margin: 0; padding: 0; flex-shrink: 0; }
+.rack-area-choices small { display: block; font-weight: 400; color: var(--muted); margin-top: 3px; }
+.rack-device-title { padding: 12px 0; }
+.rack-device-title h3 { margin: 8px 0; overflow-wrap: anywhere; }
+.rack-device-title p { font-size: 14px; color: var(--muted); }
+.rack-workspace .error-note, .rack-overview-card .error-note { margin-top: 14px; flex-wrap: wrap; }
+@media (max-width: 1200px) {
+  .rack-layout-columns { grid-template-columns: minmax(0, 1fr); }
+  .rack-accessories { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+  .rack-title { flex-wrap: wrap; }
+  .rack-actions { justify-content: flex-start; }
+}
+@media (max-width: 700px) {
+  .rack-overview-card { padding: 15px; }
+  .rack-card-heading { flex-wrap: wrap; gap: 12px; }
+  .rack-card-heading > button { width: 100%; }
+  .rack-screen-heading { align-items: flex-start; }
+  .rack-screen-heading .role-chip { font-size: 10px; }
+  .rack-screen-grid { grid-template-columns: minmax(0, 1fr); }
+  .rack-tree { display: none; }
+  .rack-mobile-picker { display: flex; flex-direction: column; gap: 8px; font-size: 12px; margin-bottom: 22px; }
+  .rack-mobile-picker select { width: 100%; min-width: 0; padding: 11px; border: 1px solid var(--line); border-radius: 4px; background: var(--surface); }
+  .rack-location { grid-template-columns: 1fr; }
+  .rack-accessories { grid-template-columns: 1fr; }
+  .rack-actions { width: 100%; }
+  .rack-actions button { flex: 1; white-space: normal; }
+  .rack-drawer { padding: 22px 18px; }
+  .rack-drawer .form-grid { grid-template-columns: 1fr; }
+  .rack-mounted small { max-width: 85px; }
+}

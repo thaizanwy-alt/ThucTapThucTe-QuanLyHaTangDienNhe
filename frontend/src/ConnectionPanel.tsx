@@ -11,7 +11,8 @@ import type {
 } from './api/connections';
 import { listDevices } from './api/devices';
 import type { ProjectDevice } from './api/devices';
-import { allowedKinds, connectionFaceChoices, faceKey, hasDuplicateIpWarning, missingFaceLabel, networkProfilePayload, poeLabel, portPayload, vlanLabel } from './connection-form';
+import { allowedKinds, connectionFaceChoices, faceKey, hasDuplicateIpWarning, missingFaceLabel, networkProfilePayload, poeLabel, portPayload, supportsDevicePorts, vlanLabel } from './connection-form';
+import { deviceLabels } from './device-form';
 import type { FaceOption } from './connection-form';
 import { invalidateTraceRequest, visibleTrace } from './trace-request';
 
@@ -22,7 +23,7 @@ type Dialog = { kind: 'port'; port?: DevicePort } | { kind: 'connection'; connec
 
 const REFRESH_FAILED = 'Đã lưu trên server nhưng chưa tải lại được, hãy tải lại trang.';
 const sideLabel = { FRONT: 'Trước', REAR: 'Sau', SINGLE: 'Đơn' } as const;
-const typeLabel = { RACK: 'Rack', PATCH_PANEL: 'Patch panel', SWITCH: 'Switch', NETWORK_OUTLET: 'Ổ mạng', AP: 'AP', CAMERA: 'Camera' } as const;
+const typeLabel = deviceLabels;
 const kindLabel = { FIXED: 'Dây cố định', PATCH: 'Dây nhảy' } as const;
 
 function messageOf(error: unknown): string {
@@ -55,7 +56,7 @@ function PortForm({ devices, ports, initial, busy, onCancel, onSave }: {
   devices: ProjectDevice[]; ports: DevicePort[]; initial?: DevicePort; busy: boolean;
   onCancel: () => void; onSave: (deviceId: string, body: ReturnType<typeof portPayload>) => void;
 }) {
-  const eligible = devices.filter(device => device.type !== 'RACK' &&
+  const eligible = devices.filter(device => supportsDevicePorts(device.type) &&
     (!['CAMERA', 'AP'].includes(device.type) || Boolean(initial) || !ports.some(port => port.deviceId === device.id)));
   const [deviceId, setDeviceId] = useState(initial?.deviceId ?? '');
   const [code, setCode] = useState(initial?.code ?? '');
@@ -183,7 +184,7 @@ export default function ConnectionPanel({ token, user, projectId, deviceRevision
     setLoading(true); setSnapshot(null); setError(''); setNotice('');
     try {
       const devices = await listDevices(token, projectId);
-      const portLists = await Promise.all(devices.filter(device => device.type !== 'RACK').map(device => listPorts(token, projectId, device.id)));
+      const portLists = await Promise.all(devices.filter(device => supportsDevicePorts(device.type)).map(device => listPorts(token, projectId, device.id)));
       const connections = await listConnections(token, projectId);
       if (current === request.current) { setSnapshot({ devices, ports: portLists.flat(), connections }); setRefreshFailed(false); }
       return current === request.current;
@@ -252,7 +253,7 @@ export default function ConnectionPanel({ token, user, projectId, deviceRevision
   const connections = snapshot?.connections ?? [];
   const canConnect = connectionFaceChoices(devices, ports).firstOptions.length > 0;
   const traceable = devices.filter(device => ['NETWORK_OUTLET', 'CAMERA', 'AP'].includes(device.type));
-  const portDevices = devices.filter(device => device.type !== 'RACK');
+  const portDevices = devices.filter(device => supportsDevicePorts(device.type));
   const selectedDevice = portDevices.find(device => device.id === selectedDeviceId) ?? portDevices[0];
   const selectedPorts = selectedDevice ? ports.filter(port => port.deviceId === selectedDevice.id) : [];
   const canCreatePort = manager && selectedDevice !== undefined && (!['CAMERA', 'AP'].includes(selectedDevice.type) || selectedPorts.length === 0);

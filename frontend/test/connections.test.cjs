@@ -15,12 +15,17 @@ const loadTs = relative => {
   return loaded.exports;
 };
 const { availableFaces, allowedKinds, connectionFaceChoices, missingFaceLabel, portPayload, networkProfilePayload,
-  poeLabel, vlanLabel, hasDuplicateIpWarning } = loadTs('../src/connection-form.ts');
+  poeLabel, vlanLabel, hasDuplicateIpWarning, supportsDevicePorts } = loadTs('../src/connection-form.ts');
 const { saveDeviceAndNotify } = loadTs('../src/device-refresh.ts');
 const { invalidateTraceRequest, visibleTrace } = loadTs('../src/trace-request.ts');
 
 const device = (id, type) => ({ id, code: id.toUpperCase(), type });
 const port = (id, deviceId, sides) => ({ id, deviceId, code: id.toUpperCase(), sides: sides.map(([side, connectionId = null]) => ({ side, connectionId })) });
+
+test('new rack equipment is never offered a physical RJ45 port', () => {
+  for (const type of ['RACK', 'UPS', 'PDU', 'NVR', 'ROUTER', 'ODF', 'CABLE_MANAGER', 'SHELF']) assert.equal(supportsDevicePorts(type), false);
+  for (const type of ['SWITCH', 'PATCH_PANEL', 'NETWORK_OUTLET', 'CAMERA', 'AP']) assert.equal(supportsDevicePorts(type), true);
+});
 
 test('free faces expose FRONT/REAR/SINGLE and own connection during rewire, never another occupied face', () => {
   const devices = [device('cam', 'CAMERA'), device('panel', 'PATCH_PANEL'), device('sw', 'SWITCH')];

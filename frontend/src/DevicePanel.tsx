@@ -5,7 +5,7 @@ import { ApiError } from './api/client';
 import { createDevice, deleteDevice, listDevices, updateDevice } from './api/devices';
 import type { DeviceInput, DeviceType, DeviceUpdate, ProjectDevice } from './api/devices';
 import type { ProjectArea, ProjectSystem } from './api/projects';
-import { deviceDraft, deviceLabels, devicePayload } from './device-form';
+import { deviceDraft, deviceLabels, devicePayload, isRackable } from './device-form';
 import type { DeviceDraft } from './device-form';
 import { saveDeviceAndNotify } from './device-refresh';
 
@@ -70,11 +70,11 @@ function DeviceForm({ initial, areas, systems, racks, busy, onCancel, onSave }: 
   const [draft, setDraft] = useState(() => deviceDraft(initial));
   const [fieldError, setFieldError] = useState('');
   const set = <K extends keyof DeviceDraft>(key: K, value: DeviceDraft[K]) => setDraft(current => ({ ...current, [key]: value }));
-  const canUseRack = draft.type === 'SWITCH' || draft.type === 'PATCH_PANEL';
+  const canUseRack = isRackable(draft.type);
   function changeType(type: DeviceType) {
     setDraft(current => ({ ...current, type,
       capacityU: type === 'RACK' ? current.capacityU : '',
-      placement: current.placement === 'rack' && !['SWITCH', 'PATCH_PANEL'].includes(type) ? 'none' : current.placement,
+      placement: current.placement === 'rack' && !isRackable(type) ? 'none' : current.placement,
     }));
   }
   function submit(event: FormEvent<HTMLFormElement>) {
@@ -118,7 +118,7 @@ function DeviceForm({ initial, areas, systems, racks, busy, onCancel, onSave }: 
         <p className="device-hint">Thiết bị kế thừa tầng/phòng của rack. Đổi rack sẽ thay vị trí cũ trong cùng lần lưu.</p>
         {racks.length === 0 && <p className="device-hint">Chưa có rack. Tạo tủ rack trước hoặc chọn vị trí trực tiếp.</p>}
       </>}
-      {!canUseRack && <p className="device-hint">Chỉ Switch và Patch panel có thể đặt trong rack; tủ rack không lồng nhau.</p>}
+      {!canUseRack && <p className="device-hint">Loại thiết bị này đặt trực tiếp tại Area, không lắp trong rack; tủ rack không lồng nhau.</p>}
       <label>Ghi chú vị trí<textarea rows={2} value={draft.locationNote} onChange={event => set('locationNote', event.target.value)} placeholder="VD: sát cửa phòng kỹ thuật" /></label>
     </fieldset>
     <fieldset className="device-systems" disabled={busy}>

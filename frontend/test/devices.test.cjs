@@ -15,8 +15,8 @@ loaded._compile(compiled, filename);
 const { deviceDraft, deviceLabels, devicePayload } = loaded.exports;
 const valid = () => ({ ...deviceDraft(), code: ' dev-01 ', name: ' Thiết bị ' });
 
-test('six types; code/name normalized; optional empty text is nullable', () => {
-  assert.equal(Object.keys(deviceLabels).length, 6);
+test('thirteen types; code/name normalized; optional empty text is nullable', () => {
+  assert.equal(Object.keys(deviceLabels).length, 13);
   for (const type of Object.keys(deviceLabels)) {
     const input = devicePayload({ ...valid(), type, brand: ' Hãng ' }, false);
     assert.equal(input.type, type);
@@ -43,13 +43,13 @@ test('PATCH excludes immutable type, replaces all systems and clears the old pla
   assert.equal(unplaced.rackId, null);
 });
 
-test('rack placement requires a rack and permits only switch/patch panel; area requires selection', () => {
+test('rack placement requires a rack and permits only rackable types; area requires selection', () => {
   for (const type of ['RACK', 'AP', 'CAMERA', 'NETWORK_OUTLET']) {
     assert.throws(() => devicePayload({ ...valid(), type, placement: 'rack', rackId: 'rack-a' }, false));
   }
   assert.throws(() => devicePayload({ ...valid(), type: 'SWITCH', placement: 'rack' }, false));
   assert.throws(() => devicePayload({ ...valid(), placement: 'area' }, false));
-  for (const type of ['SWITCH', 'PATCH_PANEL']) {
+  for (const type of ['SWITCH', 'PATCH_PANEL', 'UPS', 'PDU', 'NVR', 'ROUTER', 'ODF', 'CABLE_MANAGER', 'SHELF']) {
     assert.equal(devicePayload({ ...valid(), type, placement: 'rack', rackId: 'rack-a' }, false).rackId, 'rack-a');
   }
 });
