@@ -6,6 +6,16 @@ const dotenv = require('dotenv');
 const PROJECT_CODE = 'CT-DEMO-ELV-01';
 const MARKER = 'DEMO_SEED:ELV-BUILDING-V1 (fictional training data)';
 const DEVICE_DESCRIPTION = 'Thiết bị demo — không đại diện hiện trạng thực';
+const TASK_DESCRIPTION = 'Công việc demo — giả định quy trình thi công';
+const COMPLETION_NOTE = 'Đã kiểm tra theo checklist demo; chờ quản lý xác nhận.';
+const RETURN_REASON = 'Nhãn vị trí chưa khớp hồ sơ demo; cần kiểm tra lại.';
+const TASK_SPECS = [
+  { code: 'TASK-LAN-ASSIGNED', title: 'Gắn nhãn ổ mạng sảnh', systemCode: 'LAN-BUILDING', areaCode: 'T01-SANH', status: 'ASSIGNED' },
+  { code: 'TASK-WIFI-STARTED', title: 'Lắp AP tầng 2', systemCode: 'WIFI-BUILDING', areaCode: 'T02-VP', status: 'IN_PROGRESS' },
+  { code: 'TASK-CAM-SUBMITTED', title: 'Kiểm tra camera sảnh', systemCode: 'CAMERA-BUILDING', areaCode: 'T01-SANH', status: 'SUBMITTED' },
+  { code: 'TASK-CAM-RETURNED', title: 'Khắc phục nhãn camera tầng 2', systemCode: 'CAMERA-BUILDING', areaCode: 'T02-VP', status: 'RETURNED' },
+  { code: 'TASK-LAN-APPROVED', title: 'Đấu dây mạng lễ tân', systemCode: 'LAN-BUILDING', areaCode: 'T01-SANH', status: 'APPROVED' },
+];
 const DEVICE_SPECS = [
   { code: 'RACK-CORE', name: 'Tủ rack trung tâm — tầng 1', type: 'RACK', areaCode: 'T01-KT', capacityU: 42, systems: ['LAN-BUILDING', 'WIFI-BUILDING', 'CAMERA-BUILDING'] },
   { code: 'RACK-T02', name: 'Tủ rack phụ — tầng 2', type: 'RACK', areaCode: 'T02-KT', capacityU: 24, systems: ['LAN-BUILDING', 'WIFI-BUILDING', 'CAMERA-BUILDING'] },
@@ -20,6 +30,33 @@ const DEVICE_SPECS = [
   { code: 'CAM-DIRECT', name: 'Camera sảnh — cắm switch trực tiếp', type: 'CAMERA', areaCode: 'T01-SANH', systems: ['CAMERA-BUILDING'] },
   { code: 'CAM-OUTLET', name: 'Camera tầng 2 — qua ổ mạng', type: 'CAMERA', areaCode: 'T02-VP', systems: ['CAMERA-BUILDING'] },
   { code: 'CAM-PANEL', name: 'Camera tầng 1 — qua panel', type: 'CAMERA', areaCode: 'T01-SANH', systems: ['CAMERA-BUILDING'] },
+  { code: 'UPS-CORE', name: 'UPS tủ trung tâm', type: 'UPS', rackCode: 'RACK-CORE', systems: ['LAN-BUILDING', 'CAMERA-BUILDING'] },
+  { code: 'NVR-CORE', name: 'Đầu ghi minh họa', type: 'NVR', rackCode: 'RACK-CORE', systems: ['CAMERA-BUILDING'] },
+  { code: 'RTR-CORE', name: 'Router tủ trung tâm', type: 'ROUTER', rackCode: 'RACK-CORE', systems: ['LAN-BUILDING'] },
+  { code: 'ODF-CORE', name: 'Hộp phối quang trung tâm', type: 'ODF', rackCode: 'RACK-CORE', systems: ['LAN-BUILDING'] },
+  { code: 'CM-CORE', name: 'Thanh quản lý cáp', type: 'CABLE_MANAGER', rackCode: 'RACK-CORE', systems: ['LAN-BUILDING'] },
+  { code: 'SHELF-CORE', name: 'Khay tủ chưa xếp', type: 'SHELF', rackCode: 'RACK-CORE', systems: ['LAN-BUILDING'] },
+  { code: 'PDU-CORE', name: 'PDU dọc tủ trung tâm', type: 'PDU', rackCode: 'RACK-CORE', systems: ['LAN-BUILDING'] },
+  { code: 'ODF-T02', name: 'Hộp phối quang tầng 2 chưa xếp', type: 'ODF', rackCode: 'RACK-T02', systems: ['LAN-BUILDING'] },
+];
+
+const RACK_LAYOUT = [
+  { code: 'RACK-CORE', rackRole: 'MAIN', parentCode: null, areaCode: 'T01-KT', capacityU: 42, servedAreaCodes: ['T01-KT', 'T01-SANH'] },
+  { code: 'RACK-T02', rackRole: 'SUB', parentCode: 'RACK-CORE', areaCode: 'T02-KT', capacityU: 24, servedAreaCodes: ['T02-KT', 'T02-VP'] },
+];
+const PLACEMENT = [
+  { code: 'UPS-CORE', rackCode: 'RACK-CORE', mountMode: 'U', startU: 1, heightU: 2 },
+  { code: 'NVR-CORE', rackCode: 'RACK-CORE', mountMode: 'U', startU: 4, heightU: 2 },
+  { code: 'RTR-CORE', rackCode: 'RACK-CORE', mountMode: 'U', startU: 8, heightU: 1 },
+  { code: 'CM-CORE', rackCode: 'RACK-CORE', mountMode: 'U', startU: 39, heightU: 1 },
+  { code: 'SW-CORE', rackCode: 'RACK-CORE', mountMode: 'U', startU: 40, heightU: 1 },
+  { code: 'PP-CORE', rackCode: 'RACK-CORE', mountMode: 'U', startU: 41, heightU: 1 },
+  { code: 'ODF-CORE', rackCode: 'RACK-CORE', mountMode: 'U', startU: 42, heightU: 1 },
+  { code: 'PDU-CORE', rackCode: 'RACK-CORE', mountMode: 'ZERO_U', startU: null, heightU: 0 },
+  { code: 'SHELF-CORE', rackCode: 'RACK-CORE', mountMode: null, startU: null, heightU: null },
+  { code: 'SW-T02', rackCode: 'RACK-T02', mountMode: 'U', startU: 22, heightU: 1 },
+  { code: 'PP-T02', rackCode: 'RACK-T02', mountMode: 'U', startU: 24, heightU: 1 },
+  { code: 'ODF-T02', rackCode: 'RACK-T02', mountMode: null, startU: null, heightU: null },
 ];
 
 const normalizedId = value => value == null ? null : value.toLowerCase();
@@ -62,11 +99,218 @@ function preflightExistingDevices(specs, areas, systems, devices) {
   }
 }
 
+function sameIds(a, b) {
+  const left = normalizedIds(a || []);
+  const right = normalizedIds(b || []);
+  return left.length === right.length && left.every((id, index) => id === right[index]);
+}
+
+function assertLayoutPreflight(areas, devices, racks, layouts = []) {
+  const byCode = (rows, code) => rows.find(item => item.code === code);
+  for (const spec of RACK_LAYOUT) {
+    const rack = byCode(devices, spec.code);
+    if (!rack) continue;
+    const current = byCode(racks, spec.code);
+    if (!current || normalizedId(current.id) !== normalizedId(rack.id)) throw new Error(`Rack ${spec.code} conflicts with demo layout.`);
+    const parentId = spec.parentCode ? byCode(devices, spec.parentCode)?.id : null;
+    const served = spec.servedAreaCodes.map(code => byCode(areas, code)?.id);
+    if (served.some(id => !id) || (spec.parentCode && !parentId)) throw new Error(`Rack ${spec.code} conflicts with demo layout: missing fixture dependency.`);
+    const pristine = current.rackRole == null && current.parentRackId == null && sameIds(current.servedAreaIds, []);
+    const configured = current.rackRole === spec.rackRole && normalizedId(current.parentRackId) === normalizedId(parentId) &&
+      normalizedId(current.areaId) === normalizedId(byCode(areas, spec.areaCode)?.id) && current.capacityU === spec.capacityU &&
+      sameIds(current.servedAreaIds, served);
+    if (!pristine && !configured) throw new Error(`Rack ${spec.code} conflicts with demo layout; refusing to overwrite it.`);
+  }
+  for (const spec of PLACEMENT) {
+    const device = byCode(devices, spec.code);
+    if (!device) continue;
+    const pristine = device.mountMode == null && device.startU == null && device.heightU == null;
+    const placed = device.mountMode === spec.mountMode && (device.startU ?? null) === spec.startU &&
+      (device.heightU ?? null) === spec.heightU && normalizedId(device.rackId) === normalizedId(byCode(devices, spec.rackCode)?.id);
+    if (!pristine && !placed) throw new Error(`Device ${spec.code} conflicts with demo U layout; refusing to overwrite it.`);
+  }
+  for (const spec of RACK_LAYOUT) {
+    const occupied = PLACEMENT.filter(item => item.rackCode === spec.code && item.mountMode === 'U');
+    for (const item of occupied) {
+      if (item.startU < 1 || item.heightU < 1 || item.startU + item.heightU - 1 > spec.capacityU) {
+        throw new Error(`Rack ${spec.code} lacks capacity for ${item.code}.`);
+      }
+      if (occupied.some(other => other.code !== item.code && item.startU <= other.startU + other.heightU - 1 &&
+        other.startU <= item.startU + item.heightU - 1)) throw new Error(`Rack ${spec.code} demo U plan overlaps.`);
+    }
+    const layout = layouts.find(item => item.rack.code === spec.code);
+    if (!layout) continue;
+    for (const existing of layout.positioned) {
+      if (occupied.some(item => item.code !== existing.code && item.startU <= existing.startU + existing.heightU - 1 &&
+        existing.startU <= item.startU + item.heightU - 1)) {
+        throw new Error(`Rack ${spec.code} U conflicts with existing Device ${existing.code}; refusing to overwrite it.`);
+      }
+    }
+  }
+}
+
 function requireManagedProject(project) {
   if (project.description !== MARKER) {
     throw new Error(`${PROJECT_CODE} already exists but is not managed by this demo seed; no data was changed.`);
   }
   if (project.status !== 'IN_PROGRESS') throw new Error('Demo project status was changed; refusing to overwrite it.');
+  if (project.name !== 'Tòa nhà minh họa hạ tầng điện nhẹ' || project.address !== 'Địa chỉ giả định — chỉ dùng demo') {
+    throw new Error(`Project ${PROJECT_CODE} conflicts with the demo fixture; no data was changed.`);
+  }
+}
+
+function assertTaskCheckpoint(item, spec, projectId, technicianId, managerId) {
+  const progress = ['ASSIGNED', 'IN_PROGRESS', 'SUBMITTED'];
+  const allowed = spec.status === 'RETURNED' || spec.status === 'APPROVED'
+    ? [...progress, spec.status] : progress.slice(0, progress.indexOf(spec.status) + 1);
+  const createdAt = Date.parse(item.createdAt);
+  const updatedAt = Date.parse(item.updatedAt);
+  const submittedAt = item.submittedAt == null ? null : Date.parse(item.submittedAt);
+  const reviewedAt = item.reviewedAt == null ? null : Date.parse(item.reviewedAt);
+  const baseMatches = item.code === spec.code && normalizedId(item.projectId) === normalizedId(projectId) &&
+    item.title === spec.title && item.description === TASK_DESCRIPTION &&
+    normalizedId(item.systemId) === normalizedId(spec.systemId) &&
+    normalizedId(item.areaId) === normalizedId(spec.areaId) &&
+    normalizedId(item.assigneeId) === normalizedId(technicianId) &&
+    Number.isFinite(createdAt) && Number.isFinite(updatedAt) && createdAt <= updatedAt && allowed.includes(item.status);
+  let checkpointMatches = false;
+  if (item.status === 'ASSIGNED' || item.status === 'IN_PROGRESS') {
+    checkpointMatches = item.completionNote == null && item.returnReason == null && submittedAt === null &&
+      item.reviewedById == null && reviewedAt === null;
+  } else if (item.status === 'SUBMITTED' || item.status === 'RETURNED' || item.status === 'APPROVED') {
+    checkpointMatches = item.completionNote === COMPLETION_NOTE && Number.isFinite(submittedAt) &&
+      submittedAt >= createdAt && submittedAt <= updatedAt;
+    if (item.status === 'SUBMITTED') {
+      checkpointMatches &&= item.returnReason == null && item.reviewedById == null && reviewedAt === null;
+    } else {
+      checkpointMatches &&= item.returnReason === (item.status === 'RETURNED' ? RETURN_REASON : null) &&
+        normalizedId(item.reviewedById) === normalizedId(managerId) && Number.isFinite(reviewedAt) &&
+        reviewedAt >= submittedAt && reviewedAt <= updatedAt;
+    }
+  }
+  if (!baseMatches || !checkpointMatches) {
+    throw new Error(`Task ${spec.code} conflicts with the demo checkpoint; refusing to change it.`);
+  }
+}
+
+async function preflightExistingDependents(get, root, projectId, areas, systems, devices, technicianId, managerId) {
+  const find = (rows, code) => rows.find(item => item.code === code);
+  const portSpecs = [
+    ['OUT-LOBBY', 'P01'], ['OUT-CAM-T02', 'P01'], ['OUT-PENDING', 'P01'],
+    ['PP-CORE', 'P01'], ['PP-CORE', 'P02'], ['PP-T02', 'P01'], ['PP-T02', 'P02'],
+    ['SW-CORE', 'ETH1', 10, false, 'Cổng LAN lễ tân'],
+    ['SW-CORE', 'ETH2', 30, true, 'Camera sảnh'],
+    ['SW-CORE', 'ETH3', 30, true, 'Camera qua panel'],
+    ['SW-T02', 'ETH1', 30, true, 'Camera tầng 2'],
+    ['SW-T02', 'ETH2', 20, true, 'AP tầng 2'],
+    ['AP-T02', 'ETH1'], ['CAM-DIRECT', 'ETH1'], ['CAM-OUTLET', 'ETH1'], ['CAM-PANEL', 'ETH1'],
+  ];
+  const ports = new Map();
+  for (const deviceCode of [...new Set(portSpecs.map(item => item[0]))]) {
+    const device = find(devices, deviceCode);
+    if (!device) continue;
+    for (const port of await get(`${root}/devices/${device.id}/ports`)) ports.set(`${deviceCode}/${port.code}`, port);
+  }
+  for (const [deviceCode, code, vlan, poe, description] of portSpecs) {
+    const item = ports.get(`${deviceCode}/${code}`);
+    if (!item) continue;
+    const owner = find(devices, deviceCode);
+    if (normalizedId(item.projectId) !== normalizedId(projectId) || normalizedId(item.deviceId) !== normalizedId(owner.id) ||
+      (item.accessVlanId ?? null) !== (vlan ?? null) || (item.poeEnabled ?? null) !== (poe ?? null) ||
+      (item.description ?? null) !== (description ?? null)) {
+      throw new Error(`Port ${deviceCode}/${code} conflicts with the demo fixture; no data was changed.`);
+    }
+  }
+  const wireSpecs = [
+    ['DEMO-OUT-LOBBY-REAR', 'FIXED', 'OUT-LOBBY/P01', 'REAR', 'PP-CORE/P01', 'REAR'],
+    ['DEMO-OUT-LOBBY-PATCH', 'PATCH', 'PP-CORE/P01', 'FRONT', 'SW-CORE/ETH1', 'SINGLE'],
+    ['DEMO-CAM-DIRECT', 'FIXED', 'CAM-DIRECT/ETH1', 'SINGLE', 'SW-CORE/ETH2', 'SINGLE'],
+    ['DEMO-CAM-OUTLET', 'PATCH', 'CAM-OUTLET/ETH1', 'SINGLE', 'OUT-CAM-T02/P01', 'FRONT'],
+    ['DEMO-CAM-OUTLET-REAR', 'FIXED', 'OUT-CAM-T02/P01', 'REAR', 'PP-T02/P01', 'REAR'],
+    ['DEMO-CAM-OUTLET-PATCH', 'PATCH', 'PP-T02/P01', 'FRONT', 'SW-T02/ETH1', 'SINGLE'],
+    ['DEMO-CAM-PANEL', 'FIXED', 'CAM-PANEL/ETH1', 'SINGLE', 'PP-CORE/P02', 'REAR'],
+    ['DEMO-CAM-PANEL-PATCH', 'PATCH', 'PP-CORE/P02', 'FRONT', 'SW-CORE/ETH3', 'SINGLE'],
+    ['DEMO-AP-T02', 'PATCH', 'AP-T02/ETH1', 'SINGLE', 'SW-T02/ETH2', 'SINGLE'],
+    ['DEMO-OUT-PENDING', 'FIXED', 'OUT-PENDING/P01', 'REAR', 'PP-T02/P02', 'REAR'],
+  ];
+  const connections = await get(`${root}/connections`);
+  for (const [label, kind, aCode, aSide, bCode, bSide] of wireSpecs) {
+    const item = connections.find(value => value.label === label);
+    if (!item) continue;
+    const aId = ports.get(aCode)?.id;
+    const bId = ports.get(bCode)?.id;
+    const endpoint = value => `${normalizedId(value.portId)}:${value.side}`;
+    const expected = aId && bId ? [`${normalizedId(aId)}:${aSide}`, `${normalizedId(bId)}:${bSide}`].sort() : [];
+    const actual = item.a && item.b ? [endpoint(item.a), endpoint(item.b)].sort() : [];
+    if (normalizedId(item.projectId) !== normalizedId(projectId) || item.kind !== kind ||
+      item.description !== 'Dây demo được khai báo; chưa xác nhận thực tế' || expected.length !== 2 ||
+      actual.length !== 2 || actual.some((value, index) => value !== expected[index])) {
+      throw new Error(`Connection ${label} conflicts with the demo fixture; no data was changed.`);
+    }
+  }
+  const profileSpecs = [
+    ['CAM-DIRECT', 'STATIC', '192.0.2.21', 'AA:BB:CC:DD:EE:21'],
+    ['CAM-OUTLET', 'DHCP', null, 'AA:BB:CC:DD:EE:22'],
+    ['CAM-PANEL', 'STATIC', '192.0.2.23', 'AA:BB:CC:DD:EE:23'],
+    ['AP-T02', 'DHCP', null, 'AA:BB:CC:DD:EE:24'],
+  ];
+  for (const [code, addressMode, ipAddress, macAddress] of profileSpecs) {
+    const owner = find(devices, code);
+    if (!owner) continue;
+    const item = await get(`${root}/devices/${owner.id}/network-profile`);
+    if (item && (normalizedId(item.projectId) !== normalizedId(projectId) ||
+      item.addressMode !== addressMode || item.ipAddress !== ipAddress || item.macAddress !== macAddress)) {
+      throw new Error(`Network profile ${code} conflicts with the demo fixture; no data was changed.`);
+    }
+  }
+  const tasks = await get(`${root}/tasks`);
+  for (const spec of TASK_SPECS) {
+    const item = find(tasks, spec.code);
+    if (!item) continue;
+    assertTaskCheckpoint(item, {
+      ...spec, systemId: find(systems, spec.systemCode)?.id, areaId: find(areas, spec.areaCode)?.id,
+    }, projectId, technicianId, managerId);
+  }
+}
+
+async function seedDemoTasks({ root, projectId, taskDefinitions, technicianId, managerId, asManager, asTechnician, created }) {
+  const tasks = await asManager('GET', `${root}/tasks`);
+  for (const spec of taskDefinitions) {
+    const existing = tasks.find(item => item.code === spec.code);
+    if (existing) assertTaskCheckpoint(existing, spec, projectId, technicianId, managerId);
+  }
+  for (const spec of taskDefinitions) {
+    let item = tasks.find(value => value.code === spec.code);
+    if (!item) {
+      item = await asManager('POST', `${root}/tasks`, {
+        code: spec.code, title: spec.title, systemId: spec.systemId, areaId: spec.areaId,
+        assigneeId: technicianId, description: TASK_DESCRIPTION,
+      });
+      tasks.push(item);
+      created.tasks++;
+    }
+    assertTaskCheckpoint(item, spec, projectId, technicianId, managerId);
+    const route = `${root}/tasks/${item.id}`;
+    if (item.status === 'ASSIGNED' && spec.status !== 'ASSIGNED') {
+      item = await asTechnician('POST', `${route}/start`);
+      created.taskTransitions++;
+    }
+    if (item.status === 'IN_PROGRESS' && !['ASSIGNED', 'IN_PROGRESS'].includes(spec.status)) {
+      item = await asTechnician('POST', `${route}/submit`, { completionNote: COMPLETION_NOTE });
+      created.taskTransitions++;
+    }
+    if (item.status === 'SUBMITTED' && spec.status === 'RETURNED') {
+      item = await asManager('POST', `${route}/return`, { reason: RETURN_REASON });
+      created.taskTransitions++;
+    }
+    if (item.status === 'SUBMITTED' && spec.status === 'APPROVED') {
+      item = await asManager('POST', `${route}/approve`);
+      created.taskTransitions++;
+    }
+    assertTaskCheckpoint(item, spec, projectId, technicianId, managerId);
+    if (item.status !== spec.status) throw new Error(`Task ${spec.code} has unexpected status ${item.status}; refusing to change it further.`);
+  }
+  return tasks;
 }
 
 async function main({ envOverride = {}, fetchImpl = fetch } = {}) {
@@ -104,7 +348,8 @@ async function main({ envOverride = {}, fetchImpl = fetch } = {}) {
   if (!active.some(user => user.id === technician.user.id)) throw new Error('Demo technician is not active; seed stopped.');
   const asManager = (method, route, body) => call(method, route, body, manager.token);
   const asTechnician = (method, route, body) => call(method, route, body, technician.token);
-  const created = { project: 0, areas: 0, systems: 0, devices: 0, ports: 0, connections: 0, profiles: 0, tasks: 0 };
+  const created = { project: 0, areas: 0, systems: 0, devices: 0, ports: 0, connections: 0, profiles: 0, tasks: 0,
+    taskTransitions: 0, rackUpdates: 0, placements: 0 };
 
   const projects = await asManager('GET', '/projects');
   let project = projects.find(item => item.code === PROJECT_CODE);
@@ -120,7 +365,42 @@ async function main({ envOverride = {}, fetchImpl = fetch } = {}) {
   const areas = await asManager('GET', `${root}/areas`);
   const systems = await asManager('GET', `${root}/systems`);
   const devices = await asManager('GET', `${root}/devices`);
+  const areaSpecs = [
+    ['T01', 'Tầng 1 — sảnh và kỹ thuật trung tâm', 'FLOOR', null, 1],
+    ['T02', 'Tầng 2 — khu làm việc', 'FLOOR', null, 2],
+    ['T01-KT', 'Phòng kỹ thuật trung tâm', 'ROOM', 'T01', 1],
+    ['T01-SANH', 'Sảnh tầng 1', 'ROOM', 'T01', 2],
+    ['T02-VP', 'Văn phòng tầng 2', 'ROOM', 'T02', 1],
+    ['T02-KT', 'Phòng kỹ thuật tầng 2', 'ROOM', 'T02', 2],
+  ];
+  for (const [code, name, type, parentCode, sortOrder] of areaSpecs) {
+    const item = areas.find(value => value.code === code);
+    if (!item) continue;
+    const parentId = parentCode ? areas.find(value => value.code === parentCode)?.id : null;
+    if (item.projectId?.toLowerCase() !== project.id.toLowerCase() || item.name !== name || item.type !== type ||
+      item.sortOrder !== sortOrder || (parentCode && !parentId) || normalizedId(item.parentId) !== normalizedId(parentId)) {
+      throw new Error(`Area ${code} conflicts with the demo fixture; no data was changed.`);
+    }
+  }
+  const systemSpecs = [
+    ['LAN-BUILDING', 'Mạng LAN tòa nhà', 'LAN'],
+    ['WIFI-BUILDING', 'WiFi khu làm việc', 'WIFI'],
+    ['CAMERA-BUILDING', 'Camera an ninh', 'CAMERA'],
+  ];
+  for (const [code, name, category] of systemSpecs) {
+    const item = systems.find(value => value.code === code);
+    if (item && (item.projectId?.toLowerCase() !== project.id.toLowerCase() || item.name !== name ||
+      item.category !== category || item.description !== 'Hạng mục demo — dữ liệu giả định')) {
+      throw new Error(`System ${code} conflicts with the demo fixture; no data was changed.`);
+    }
+  }
   preflightExistingDevices(DEVICE_SPECS, areas, systems, devices);
+  const racksBefore = await asManager('GET', `${root}/racks`);
+  const layoutsBefore = await Promise.all(racksBefore.filter(item => RACK_LAYOUT.some(spec => spec.code === item.code))
+    .map(item => asManager('GET', `${root}/racks/${item.id}/layout`)));
+  assertLayoutPreflight(areas, devices, racksBefore, layoutsBefore);
+  await preflightExistingDependents(route => asManager('GET', route), root, project.id, areas, systems, devices,
+    technician.user.id, manager.user.id);
   const ensure = async (rows, key, route, body, counter, check) => {
     let item = rows.find(value => value.code === key);
     if (item) { check(item); return item; }
@@ -171,6 +451,30 @@ async function main({ envOverride = {}, fetchImpl = fetch } = {}) {
   };
   const fixtureDevices = {};
   for (const spec of DEVICE_SPECS) fixtureDevices[spec.code] = await device(spec);
+  for (const spec of RACK_LAYOUT) {
+    const rack = fixtureDevices[spec.code];
+    const current = (await asManager('GET', `${root}/racks`)).find(item => item.code === spec.code);
+    if (current.rackRole === spec.rackRole) continue;
+    const body = {
+      rackRole: spec.rackRole,
+      parentRackId: spec.parentCode ? fixtureDevices[spec.parentCode].id : null,
+      areaId: areas.find(item => item.code === spec.areaCode).id,
+      capacityU: spec.capacityU,
+      servedAreaIds: spec.servedAreaCodes.map(code => areas.find(item => item.code === code).id),
+    };
+    await asManager('PATCH', `${root}/racks/${rack.id}`, body);
+    created.rackUpdates++;
+  }
+  for (const spec of PLACEMENT) {
+    const item = fixtureDevices[spec.code];
+    if (item.mountMode === spec.mountMode && (item.startU ?? null) === spec.startU && (item.heightU ?? null) === spec.heightU) continue;
+    const placed = await asManager('PUT', `${root}/devices/${item.id}/placement`, {
+      areaId: null, rackId: fixtureDevices[spec.rackCode].id,
+      mountMode: spec.mountMode, startU: spec.startU, heightU: spec.heightU,
+    });
+    Object.assign(item, placed);
+    created.placements++;
+  }
   const [outLobby, outCamera, outPending, ap, camDirect, camOutlet, camPanel] =
     ['OUT-LOBBY', 'OUT-CAM-T02', 'OUT-PENDING', 'AP-T02', 'CAM-DIRECT', 'CAM-OUTLET', 'CAM-PANEL'].map(code => fixtureDevices[code]);
   const [ppCore, ppAux, swCore, swAux] =
@@ -248,40 +552,12 @@ async function main({ envOverride = {}, fetchImpl = fetch } = {}) {
   await profile(camPanel, { addressMode: 'STATIC', ipAddress: '192.0.2.23', macAddress: 'AA:BB:CC:DD:EE:23' });
   await profile(ap, { addressMode: 'DHCP', ipAddress: null, macAddress: 'AA:BB:CC:DD:EE:24' });
 
-  const tasks = await asManager('GET', `${root}/tasks`);
-  const taskDefinitions = [
-    { code: 'TASK-LAN-ASSIGNED', title: 'Gắn nhãn ổ mạng sảnh', systemId: lan.id, areaId: lobby.id, status: 'ASSIGNED' },
-    { code: 'TASK-WIFI-STARTED', title: 'Lắp AP tầng 2', systemId: wifi.id, areaId: office.id, status: 'IN_PROGRESS' },
-    { code: 'TASK-CAM-SUBMITTED', title: 'Kiểm tra camera sảnh', systemId: camera.id, areaId: lobby.id, status: 'SUBMITTED' },
-    { code: 'TASK-CAM-RETURNED', title: 'Khắc phục nhãn camera tầng 2', systemId: camera.id, areaId: office.id, status: 'RETURNED' },
-    { code: 'TASK-LAN-APPROVED', title: 'Đấu dây mạng lễ tân', systemId: lan.id, areaId: lobby.id, status: 'APPROVED' },
-  ];
-  for (const spec of taskDefinitions) {
-    let item = tasks.find(value => value.code === spec.code);
-    if (item) {
-      sameProject(item);
-      if (item.title !== spec.title || item.assigneeId !== technician.user.id || item.systemId !== spec.systemId || item.areaId !== spec.areaId) {
-        throw new Error(`Task ${spec.code} was changed; refusing to reuse it.`);
-      }
-    } else {
-      item = await asManager('POST', `${root}/tasks`, {
-        code: spec.code, title: spec.title, systemId: spec.systemId, areaId: spec.areaId,
-        assigneeId: technician.user.id, description: 'Công việc demo — giả định quy trình thi công',
-      });
-      tasks.push(item);
-      created.tasks++;
-    }
-    const route = `${root}/tasks/${item.id}`;
-    if (item.status === 'ASSIGNED' && spec.status !== 'ASSIGNED') item = await asTechnician('POST', `${route}/start`);
-    if (item.status === 'IN_PROGRESS' && !['ASSIGNED', 'IN_PROGRESS'].includes(spec.status)) {
-      item = await asTechnician('POST', `${route}/submit`, { completionNote: 'Đã kiểm tra theo checklist demo; chờ quản lý xác nhận.' });
-    }
-    if (item.status === 'SUBMITTED' && spec.status === 'RETURNED') {
-      item = await asManager('POST', `${route}/return`, { reason: 'Nhãn vị trí chưa khớp hồ sơ demo; cần kiểm tra lại.' });
-    }
-    if (item.status === 'SUBMITTED' && spec.status === 'APPROVED') item = await asManager('POST', `${route}/approve`);
-    if (item.status !== spec.status) throw new Error(`Task ${spec.code} has unexpected status ${item.status}; refusing to change it further.`);
-  }
+  const taskDefinitions = TASK_SPECS.map(spec => ({ ...spec,
+    systemId: systems.find(item => item.code === spec.systemCode).id,
+    areaId: areas.find(item => item.code === spec.areaCode).id,
+  }));
+  const tasks = await seedDemoTasks({ root, projectId: project.id, taskDefinitions,
+    technicianId: technician.user.id, managerId: manager.user.id, asManager, asTechnician, created });
 
   const traceCodes = ['OUT-LOBBY', 'CAM-DIRECT', 'CAM-OUTLET', 'CAM-PANEL', 'OUT-PENDING'];
   const traces = {};
@@ -292,10 +568,20 @@ async function main({ envOverride = {}, fetchImpl = fetch } = {}) {
   if (traces['OUT-LOBBY'][0]?.complete !== true || traces['CAM-DIRECT'][0]?.complete !== true ||
     traces['CAM-OUTLET'][0]?.complete !== true || traces['CAM-PANEL'][0]?.complete !== true ||
     traces['OUT-PENDING'][0]?.complete !== false) throw new Error('Demo trace verification failed.');
+  const layouts = {};
+  for (const spec of RACK_LAYOUT) {
+    const layout = await asManager('GET', `${root}/racks/${fixtureDevices[spec.code].id}/layout`);
+    layouts[spec.code] = {
+      role: layout.rack.rackRole, capacityU: layout.rack.capacityU,
+      positioned: layout.positioned.map(item => ({ code: item.code, startU: item.startU, heightU: item.heightU })),
+      zeroU: layout.zeroU.map(item => item.code), unplaced: layout.unplaced.map(item => item.code),
+    };
+  }
   const counts = { areas: areas.length, systems: systems.length, devices: devices.length, ports: [...portCache.values()].reduce((n, rows) => n + rows.length, 0),
     connections: connections.length, profiles: 4, tasks: tasks.length };
-  console.log(JSON.stringify({ projectCode: project.code, projectId: project.id, created, counts, traces }));
+  console.log(JSON.stringify({ projectCode: project.code, projectId: project.id, created, counts, layouts, traces }));
 }
 
 if (require.main === module) main().catch(error => { console.error(error.message); process.exitCode = 1; });
-module.exports = { main, requireManagedProject, assertDeviceFixture, preflightExistingDevices, DEVICE_SPECS, PROJECT_CODE, MARKER };
+module.exports = { main, requireManagedProject, assertDeviceFixture, preflightExistingDevices, assertLayoutPreflight,
+  preflightExistingDependents, assertTaskCheckpoint, seedDemoTasks, DEVICE_SPECS, RACK_LAYOUT, PLACEMENT, PROJECT_CODE, MARKER };

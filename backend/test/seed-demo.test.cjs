@@ -1,13 +1,17 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const { randomUUID } = require('node:crypto');
-const { main, requireManagedProject, assertDeviceFixture, PROJECT_CODE, MARKER } = require('../scripts/seed-demo.cjs');
+const { main, requireManagedProject, assertDeviceFixture, assertLayoutPreflight, preflightExistingDependents,
+  seedDemoTasks, PROJECT_CODE, MARKER } = require('../scripts/seed-demo.cjs');
 
 test('demo seed refuses an existing project code without its ownership marker', () => {
-  assert.throws(() => requireManagedProject({ description: 'Công trình của người dùng', status: 'IN_PROGRESS' }),
+  const project = { description: MARKER, status: 'IN_PROGRESS',
+    name: 'Tòa nhà minh họa hạ tầng điện nhẹ', address: 'Địa chỉ giả định — chỉ dùng demo' };
+  assert.throws(() => requireManagedProject({ ...project, description: 'Công trình của người dùng' }),
     new RegExp(`${PROJECT_CODE} already exists`));
-  assert.throws(() => requireManagedProject({ description: MARKER, status: 'COMPLETED' }), /status was changed/);
-  assert.doesNotThrow(() => requireManagedProject({ description: MARKER, status: 'IN_PROGRESS' }));
+  assert.throws(() => requireManagedProject({ ...project, status: 'COMPLETED' }), /status was changed/);
+  assert.throws(() => requireManagedProject({ ...project, address: 'Changed' }), /conflicts/);
+  assert.doesNotThrow(() => requireManagedProject(project));
 });
 
 test('device fixture comparison normalizes null, UUID case and system order, but rejects optional-field drift', () => {
@@ -32,6 +36,7 @@ for (const changedField of ['description', 'capacityU']) {
   test(`seed preflight refuses matching Device code with changed ${changedField} before dependent writes`, async () => {
     const projectId = randomUUID();
     const areaId = randomUUID();
+    const floorId = randomUUID();
     const systemIds = [randomUUID(), randomUUID(), randomUUID()];
     const technicianId = randomUUID();
     const managerToken = randomUUID();
@@ -57,10 +62,16 @@ for (const changedField of ['description', 'capacityU']) {
           ? { id: randomUUID(), role: 'MANAGER' }
           : { id: technicianId, role: 'TECHNICIAN' };
       } else if (route === '/users/technicians') result = [{ id: technicianId }];
-      else if (route === '/projects') result = [{ id: projectId, code: PROJECT_CODE, description: MARKER, status: 'IN_PROGRESS' }];
-      else if (route === `/projects/${projectId}/areas`) result = [{ id: areaId, code: 'T01-KT' }];
+      else if (route === '/projects') result = [{ id: projectId, code: PROJECT_CODE, description: MARKER, status: 'IN_PROGRESS',
+        name: 'Tòa nhà minh họa hạ tầng điện nhẹ', address: 'Địa chỉ giả định — chỉ dùng demo' }];
+      else if (route === `/projects/${projectId}/areas`) result = [
+        { id: floorId, projectId, code: 'T01', name: 'Tầng 1 — sảnh và kỹ thuật trung tâm', type: 'FLOOR', parentId: null, sortOrder: 1 },
+        { id: areaId, projectId, code: 'T01-KT', name: 'Phòng kỹ thuật trung tâm', type: 'ROOM', parentId: floorId, sortOrder: 1 },
+      ];
       else if (route === `/projects/${projectId}/systems`) result = ['LAN-BUILDING', 'WIFI-BUILDING', 'CAMERA-BUILDING']
-        .map((code, index) => ({ id: systemIds[index], code }));
+        .map((code, index) => ({ id: systemIds[index], projectId, code,
+          name: ['Mạng LAN tòa nhà', 'WiFi khu làm việc', 'Camera an ninh'][index],
+          category: ['LAN', 'WIFI', 'CAMERA'][index], description: 'Hạng mục demo — dữ liệu giả định' }));
       else if (route === `/projects/${projectId}/devices`) result = [rack];
       else throw new Error(`Unexpected API route ${route}`);
       return new Response(JSON.stringify(result), { status: 200, headers: { 'Content-Type': 'application/json' } });
@@ -74,3 +85,140 @@ for (const changedField of ['description', 'capacityU']) {
     assert.equal(calls.filter(({ method, route }) => method !== 'GET' && route !== '/auth/login').length, 0);
   });
 }
+
+test('rack layout preflight accepts pristine or exact fixture and rejects changed hierarchy or U', () => {
+  const coreId = randomUUID();
+  const subId = randomUUID();
+  const coreArea = randomUUID();
+  const lobbyArea = randomUUID();
+  const subArea = randomUUID();
+  const officeArea = randomUUID();
+  const areas = [
+    { code: 'T01-KT', id: coreArea }, { code: 'T01-SANH', id: lobbyArea },
+    { code: 'T02-KT', id: subArea }, { code: 'T02-VP', id: officeArea },
+  ];
+  const devices = [
+    { code: 'RACK-CORE', id: coreId, rackRole: null, parentRackId: null, areaId: coreArea, capacityU: 42 },
+    { code: 'RACK-T02', id: subId, rackRole: null, parentRackId: null, areaId: subArea, capacityU: 24 },
+    { code: 'SW-CORE', id: randomUUID(), rackId: coreId, mountMode: null, startU: null, heightU: null },
+  ];
+  const racks = devices.slice(0, 2).map(item => ({ ...item, servedAreaIds: [] }));
+  assert.doesNotThrow(() => assertLayoutPreflight(areas, devices, racks));
+  racks[0] = { ...racks[0], rackRole: 'MAIN', servedAreaIds: [lobbyArea, coreArea] };
+  assert.doesNotThrow(() => assertLayoutPreflight(areas, devices, racks));
+  devices[2] = { ...devices[2], mountMode: 'U', startU: 40, heightU: 1 };
+  assert.doesNotThrow(() => assertLayoutPreflight(areas, devices, racks));
+  assert.throws(() => assertLayoutPreflight(areas, devices, [{ ...racks[0], rackRole: 'SUB' }, racks[1]]), /conflicts/);
+  assert.throws(() => assertLayoutPreflight(areas, devices, [{ ...racks[0], servedAreaIds: [coreArea] }, racks[1]]), /RACK-CORE conflicts/);
+  assert.throws(() => assertLayoutPreflight(areas, [devices[0], devices[1], { ...devices[2], startU: 20 }], racks), /SW-CORE conflicts/);
+  assert.throws(() => assertLayoutPreflight(areas, devices, racks, [{
+    rack: racks[0], positioned: [{ code: 'USER-DEVICE', startU: 40, heightU: 1 }],
+  }]), /U conflicts with existing Device USER-DEVICE/);
+});
+
+test('dependent preflight rejects a changed port before any seed write', async () => {
+  const projectId = randomUUID();
+  const deviceId = randomUUID();
+  const readRoutes = [];
+  const get = async route => {
+    readRoutes.push(route);
+    if (route.endsWith('/ports')) return [{
+      id: randomUUID(), projectId, deviceId, code: 'P01', accessVlanId: null,
+      poeEnabled: null, description: 'Changed by user',
+    }];
+    throw new Error(`Unexpected read ${route}`);
+  };
+  await assert.rejects(preflightExistingDependents(get, `/projects/${projectId}`, projectId, [], [],
+    [{ id: deviceId, projectId, code: 'OUT-LOBBY' }], randomUUID()), /Port OUT-LOBBY\/P01 conflicts/);
+  assert.equal(readRoutes.length, 1);
+});
+
+function taskHarness(targetStatus, interruptAt) {
+  const projectId = randomUUID();
+  const technicianId = randomUUID();
+  const managerId = randomUUID();
+  const spec = { code: `TASK-CHECKPOINT-${targetStatus}`, title: 'Task demo checkpoint',
+    systemId: randomUUID(), areaId: randomUUID(), status: targetStatus };
+  const task = { id: randomUUID(), projectId, code: spec.code, title: spec.title,
+    systemId: spec.systemId, areaId: spec.areaId, assigneeId: technicianId,
+    description: 'Công việc demo — giả định quy trình thi công', status: 'ASSIGNED',
+    completionNote: null, returnReason: null, submittedAt: null, reviewedById: null, reviewedAt: null,
+    createdAt: '2026-01-01T00:00:00.000Z', updatedAt: '2026-01-01T00:00:00.000Z' };
+  let interrupted = false;
+  const writes = [];
+  const change = (action, body) => {
+    writes.push(action);
+    const time = new Date(Date.parse(task.updatedAt) + 1000).toISOString();
+    task.updatedAt = time;
+    if (action === 'start') task.status = 'IN_PROGRESS';
+    if (action === 'submit') {
+      task.status = 'SUBMITTED';
+      task.completionNote = body.completionNote;
+      task.submittedAt = time;
+    }
+    if (action === 'return' || action === 'approve') {
+      task.status = action === 'return' ? 'RETURNED' : 'APPROVED';
+      task.returnReason = action === 'return' ? body.reason : null;
+      task.reviewedById = managerId;
+      task.reviewedAt = time;
+    }
+    if (action === interruptAt && !interrupted) {
+      interrupted = true;
+      throw new Error(`Simulated lost response after ${action}`);
+    }
+    return { ...task };
+  };
+  const asManager = async (method, route, body) => {
+    if (method === 'GET' && route.endsWith('/tasks')) return [{ ...task }];
+    if (method === 'POST' && route.endsWith('/return')) return change('return', body);
+    if (method === 'POST' && route.endsWith('/approve')) return change('approve', body);
+    throw new Error(`Unexpected manager request ${method} ${route}`);
+  };
+  const asTechnician = async (method, route, body) => {
+    if (method === 'POST' && route.endsWith('/start')) return change('start', body);
+    if (method === 'POST' && route.endsWith('/submit')) return change('submit', body);
+    throw new Error(`Unexpected technician request ${method} ${route}`);
+  };
+  const run = () => {
+    const created = { tasks: 0, taskTransitions: 0 };
+    return seedDemoTasks({ root: `/projects/${projectId}`, projectId, taskDefinitions: [spec],
+      technicianId, managerId, asManager, asTechnician, created }).then(() => created);
+  };
+  return { run, task, writes, spec, projectId, technicianId, managerId, asManager, asTechnician };
+}
+
+for (const [target, interruptAt, expected] of [
+  ['RETURNED', 'start', ['start', 'submit', 'return']],
+  ['APPROVED', 'submit', ['start', 'submit', 'approve']],
+]) {
+  test(`Task seed resumes after lost ${interruptAt} response and next run performs no write`, async () => {
+    const fixture = taskHarness(target, interruptAt);
+    await assert.rejects(fixture.run(), new RegExp(`lost response after ${interruptAt}`));
+    assert.equal(fixture.task.status, interruptAt === 'start' ? 'IN_PROGRESS' : 'SUBMITTED');
+    const resumed = await fixture.run();
+    assert.equal(fixture.task.status, target);
+    assert.equal(resumed.tasks, 0);
+    assert.deepEqual(fixture.writes, expected);
+    const again = await fixture.run();
+    assert.deepEqual(again, { tasks: 0, taskTransitions: 0 });
+    assert.deepEqual(fixture.writes, expected);
+  });
+}
+
+test('Task seed preflights all existing tasks before writing when another fixture was edited', async () => {
+  const fixture = taskHarness('RETURNED', null);
+  const changed = { ...fixture.task, id: randomUUID(), code: 'TASK-OTHER', title: 'Other task',
+    description: 'User edited this task' };
+  const spec2 = { ...fixture.spec, code: changed.code, title: changed.title };
+  let writes = 0;
+  const asManager = async method => {
+    if (method === 'GET') return [{ ...fixture.task }, changed];
+    writes++;
+    throw new Error('Unexpected write');
+  };
+  const asTechnician = async () => { writes++; throw new Error('Unexpected write'); };
+  await assert.rejects(seedDemoTasks({ root: `/projects/${fixture.projectId}`, projectId: fixture.projectId,
+    taskDefinitions: [fixture.spec, spec2], technicianId: fixture.technicianId, managerId: fixture.managerId,
+    asManager, asTechnician, created: { tasks: 0, taskTransitions: 0 } }), /TASK-OTHER conflicts/);
+  assert.equal(writes, 0);
+});
