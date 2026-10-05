@@ -14,8 +14,9 @@ import { ConnectionKind, EndpointEnd, PortSide } from './connection.enums';
 import { ConnectionRouteDto, CreateConnectionDto, CreatePortDto, EndpointDto, RewireDto, UpdatePortDto } from './dto/connection.dto';
 
 const idKey = (id: string) => id.toLowerCase();
-const faces = (type: DeviceType): PortSide[] => type === DeviceType.RACK ? [] :
-  [DeviceType.NETWORK_OUTLET, DeviceType.PATCH_PANEL].includes(type) ? [PortSide.FRONT, PortSide.REAR] : [PortSide.SINGLE];
+const faces = (type: DeviceType): PortSide[] =>
+  [DeviceType.NETWORK_OUTLET, DeviceType.PATCH_PANEL].includes(type) ? [PortSide.FRONT, PortSide.REAR] :
+    [DeviceType.SWITCH, DeviceType.AP, DeviceType.CAMERA].includes(type) ? [PortSide.SINGLE] : [];
 type Graph = {
   devices: Map<string, ProjectDevice>; ports: Map<string, DevicePort>;
   areas: Map<string, ProjectArea>; connections: Map<string, PhysicalConnection>; endpoints: ConnectionEndpoint[];
@@ -83,7 +84,7 @@ export class ConnectionsService {
   async createPort(projectId: string, deviceId: string, dto: CreatePortDto, user: AuthenticatedUser) {
     return this.write(projectId, user, async m => {
       const device = await this.device(m, projectId, deviceId);
-      if (!faces(device.type).length) throw new BadRequestException('Rack cannot have ports');
+      if (!faces(device.type).length) throw new BadRequestException('Ports are not supported for this device type');
       this.validateSwitchMetadata(device, dto);
       const repo = m.getRepository(DevicePort);
       if ([DeviceType.CAMERA, DeviceType.AP].includes(device.type) && await repo.countBy({ projectId, deviceId })) {

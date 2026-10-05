@@ -395,6 +395,12 @@ test('Connections: real PostgreSQL constraints/concurrency/rollback, Nest HTTP a
       assert.deepEqual(invalid, []);
       const countOld = async () => (await db.query('SELECT (SELECT count(*)::int FROM users) AS users, (SELECT count(*)::int FROM projects) AS projects, (SELECT count(*)::int FROM project_devices) AS devices'))[0];
       const before = await countOld();
+      assert.equal((await db.query('SELECT name FROM migrations ORDER BY id DESC LIMIT 1'))[0].name, 'EnforceRackServedAreaForeignKey1799000000000');
+      await db.undoLastMigration();
+      assert.equal((await db.query('SELECT name FROM migrations ORDER BY id DESC LIMIT 1'))[0].name, 'EnforceRackLayoutIntegrity1798000000000');
+      await db.undoLastMigration();
+      assert.equal((await db.query('SELECT name FROM migrations ORDER BY id DESC LIMIT 1'))[0].name, 'AddRackLayout1797000000000');
+      await db.undoLastMigration();
       assert.equal((await db.query('SELECT name FROM migrations ORDER BY id DESC LIMIT 1'))[0].name, 'AddDeviceNetworkProfileAndPortMetadata1796000000000');
       await db.undoLastMigration();
       assert.equal((await db.query('SELECT name FROM migrations ORDER BY id DESC LIMIT 1'))[0].name, 'EnforceConnectionEndpointPair1795000000000');

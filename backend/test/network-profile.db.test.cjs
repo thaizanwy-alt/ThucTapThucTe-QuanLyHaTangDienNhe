@@ -255,6 +255,15 @@ test('Network profile and switch VLAN/PoE: PostgreSQL constraints, trace, HTTP, 
       await t.test('isolated down/up touches only new profile schema and port columns', async () => {
         const before = (await db.query('SELECT count(*)::int AS count FROM project_devices'))[0].count;
         assert.equal((await db.query('SELECT name FROM migrations ORDER BY id DESC LIMIT 1'))[0].name,
+          'EnforceRackServedAreaForeignKey1799000000000');
+        await db.undoLastMigration();
+        assert.equal((await db.query('SELECT name FROM migrations ORDER BY id DESC LIMIT 1'))[0].name,
+          'EnforceRackLayoutIntegrity1798000000000');
+        await db.undoLastMigration();
+        assert.equal((await db.query('SELECT name FROM migrations ORDER BY id DESC LIMIT 1'))[0].name,
+          'AddRackLayout1797000000000');
+        await db.undoLastMigration();
+        assert.equal((await db.query('SELECT name FROM migrations ORDER BY id DESC LIMIT 1'))[0].name,
           'AddDeviceNetworkProfileAndPortMetadata1796000000000');
         await db.undoLastMigration();
         assert.equal((await db.query("SELECT to_regclass('public.device_network_profiles') AS name"))[0].name, null);

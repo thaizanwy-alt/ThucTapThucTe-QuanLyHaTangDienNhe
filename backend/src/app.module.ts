@@ -8,6 +8,7 @@ import { TasksModule } from './tasks/tasks.module';
 import { UsersModule } from './users/users.module';
 import { DevicesModule } from './devices/devices.module';
 import { ConnectionsModule } from './connections/connections.module';
+import { RacksModule } from './devices/racks.module';
 
 @Module({
   imports: [
@@ -33,6 +34,7 @@ import { ConnectionsModule } from './connections/connections.module';
     UsersModule,
     DevicesModule,
     ConnectionsModule,
+    RacksModule,
   ],
   controllers: [HealthController],
 })

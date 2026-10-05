@@ -15,7 +15,7 @@ const transform = (Type, body) => pipe.transform(body, { type: 'body', metatype:
 const rejectsStatus = (promise, status) => assert.rejects(promise, error => error.getStatus?.() === status);
 
 test('device DTO normalizes code/text and accepts nullable fields and distinct systemIds', async () => {
-  assert.equal(Object.keys(DeviceType).length, 6);
+  assert.equal(Object.keys(DeviceType).length, 13);
   for (const type of Object.values(DeviceType)) {
     const dto = await transform(CreateProjectDeviceDto, { type, code: ' dev-01 ', name: ' Thiết bị ', brand: ' Hãng ', systemIds: [randomUUID(), randomUUID()] });
     assert.equal(dto.code, 'DEV-01');

@@ -5,4 +5,11 @@ export enum DeviceType {
   NETWORK_OUTLET = 'NETWORK_OUTLET',
   AP = 'AP',
   CAMERA = 'CAMERA',
+  UPS = 'UPS',
+  PDU = 'PDU',
+  NVR = 'NVR',
+  ROUTER = 'ROUTER',
+  ODF = 'ODF',
+  CABLE_MANAGER = 'CABLE_MANAGER',
+  SHELF = 'SHELF',
 }

@@ -12,6 +12,7 @@ import { PutDeviceNetworkProfileDto } from './dto/network-profile.dto';
 import { DeviceNetworkProfile } from './device-network-profile.entity';
 import { ProjectDevice, ProjectDeviceResponse } from './project-device.entity';
 import { ProjectDeviceSystem } from './project-device-system.entity';
+import { RackServedArea } from './rack-served-area.entity';
 
 const textFields = ['brand', 'model', 'serialNumber', 'description', 'locationNote'] as const;
 const editableFields = ['code', 'name', ...textFields, 'areaId', 'rackId', 'capacityU', 'systemIds'] as const;
@@ -88,10 +89,25 @@ export class DevicesService {
       if (dto.name !== undefined) device.name = dto.name.trim();
       Object.assign(device, this.textChanges(dto));
       if (dto.areaId !== undefined) device.areaId = dto.areaId;
-      if (dto.rackId !== undefined) device.rackId = dto.rackId;
+      if (dto.rackId !== undefined) {
+        if ((device.rackId?.toLowerCase() ?? null) !== (dto.rackId?.toLowerCase() ?? null)) {
+          // A U position never follows a device into a different rack.
+          device.mountMode = null;
+          device.startU = null;
+          device.heightU = null;
+        }
+        device.rackId = dto.rackId;
+      }
       if (dto.capacityU !== undefined) device.capacityU = dto.capacityU;
       // Validate the final placement, including fields omitted from this PATCH.
       await this.validateLocation(manager, device);
+      if (device.type === DeviceType.RACK && dto.capacityU !== undefined) {
+        const installed = await manager.getRepository(ProjectDevice).findBy({ projectId, rackId: device.id });
+        if (installed.some(item => item.startU !== null &&
+          (device.capacityU === null || item.startU + item.heightU! - 1 > device.capacityU))) {
+          throw new ConflictException('Rack capacity is below an existing placement');
+        }
+      }
       if (dto.systemIds !== undefined) await this.validateSystems(manager, projectId, dto.systemIds);
       // Membership-only edits must also advance the device's modification time.
       if (dto.systemIds !== undefined) device.updatedAt = new Date();
@@ -103,7 +119,7 @@ export class DevicesService {
 
   async deleteDevice(projectId: string, deviceId: string, user: AuthenticatedUser): Promise<void> {
     return this.write(projectId, user, async (manager) => {
-      await this.requireDevice(manager, projectId, deviceId);
+      const device = await this.requireDevice(manager, projectId, deviceId);
       const devices = manager.getRepository(ProjectDevice);
       if (await devices.countBy({ projectId, rackId: deviceId })) {
         throw new ConflictException('Rack has dependent devices');
@@ -111,7 +127,11 @@ export class DevicesService {
       if (await manager.getRepository(DevicePort).countBy({ projectId, deviceId })) {
         throw new ConflictException('Device has ports');
       }
+      if (device.type === DeviceType.RACK && await devices.countBy({ projectId, parentRackId: deviceId })) {
+        throw new ConflictException('MAIN rack still has SUB racks');
+      }
       // These are the device's own memberships, not independent dependent data.
+      await manager.getRepository(RackServedArea).delete({ projectId, rackId: deviceId });
       await manager.getRepository(DeviceNetworkProfile).delete({ projectId, deviceId });
       await manager.getRepository(ProjectDeviceSystem).delete({ projectId, deviceId });
       await devices.delete({ projectId, id: deviceId });
@@ -129,7 +149,7 @@ export class DevicesService {
     } catch (error) {
       const value = error as { code?: string; driverError?: { code?: string } } | null;
       const code = value?.driverError?.code ?? value?.code;
-      if (code === '23505') throw new ConflictException('Device code or membership already exists');
+      if (code === '23505' || code === '23P01') throw new ConflictException('Device code, membership or rack U position already exists');
       if (code === '23503' || code === '23001') throw new ConflictException('Related data changed or device has dependent data');
       throw error;
     }
@@ -170,12 +190,18 @@ export class DevicesService {
       throw new BadRequestException('capacityU is only allowed for a rack and must be a positive integer');
     }
     if (device.areaId !== null && device.rackId !== null) throw new BadRequestException('Use areaId or rackId, not both');
+    if (device.type === DeviceType.RACK && device.rackRole != null &&
+      (device.areaId === null || device.capacityU === null)) {
+      throw new BadRequestException('Configured rack requires placement and capacity');
+    }
     if (device.areaId !== null && !await manager.getRepository(ProjectArea).findOneBy({ projectId: device.projectId, id: device.areaId })) {
       throw new NotFoundException('Area not found');
     }
     if (device.rackId !== null) {
-      if (![DeviceType.SWITCH, DeviceType.PATCH_PANEL].includes(device.type) || device.rackId === device.id) {
-        throw new BadRequestException('Only switches and patch panels can be placed in a rack');
+      if (![DeviceType.SWITCH, DeviceType.PATCH_PANEL, DeviceType.UPS, DeviceType.PDU,
+        DeviceType.NVR, DeviceType.ROUTER, DeviceType.ODF, DeviceType.CABLE_MANAGER, DeviceType.SHELF].includes(device.type) ||
+        device.rackId.toLowerCase() === device.id?.toLowerCase()) {
+        throw new BadRequestException('Device type cannot be placed in a rack');
       }
       const rack = await this.requireDevice(manager, device.projectId, device.rackId);
       if (rack.type !== DeviceType.RACK) throw new BadRequestException('rackId must reference a rack');
