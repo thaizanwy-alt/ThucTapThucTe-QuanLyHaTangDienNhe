@@ -24,6 +24,8 @@ import { CreateProjectDevices1793000000000 } from './migrations/1793000000000-Cr
 import { AddRackLayout1797000000000 } from './migrations/1797000000000-AddRackLayout';
 import { EnforceRackLayoutIntegrity1798000000000 } from './migrations/1798000000000-EnforceRackLayoutIntegrity';
 import { EnforceRackServedAreaForeignKey1799000000000 } from './migrations/1799000000000-EnforceRackServedAreaForeignKey';
+import { ChecklistTemplate, ChecklistTemplateItem, ProjectInspection, InspectionItem, RemediationIssue } from '../inspections/inspection.entities';
+import { CreateInspections1800000000000 } from './migrations/1800000000000-CreateInspections';
 
 config({ path: resolve(__dirname, '../../.env') });
 
@@ -36,7 +38,7 @@ export const dataSource = new DataSource({
   database: process.env.DB_NAME ?? 'electrical_infrastructure',
   uuidExtension: 'pgcrypto',
   installExtensions: false,
-  entities: [User, Project, ProjectArea, ProjectSystem, ProjectTask, ProjectDevice, ProjectDeviceSystem, RackServedArea, DeviceNetworkProfile, DevicePort, PhysicalConnection, ConnectionEndpoint],
-  migrations: [CreateUsers1790000000000, CreateProjectStructure1791000000000, CreateProjectTasks1792000000000, CreateProjectDevices1793000000000, CreateDeviceConnections1794000000000, EnforceConnectionEndpointPair1795000000000, AddDeviceNetworkProfileAndPortMetadata1796000000000, AddRackLayout1797000000000, EnforceRackLayoutIntegrity1798000000000, EnforceRackServedAreaForeignKey1799000000000],
+  entities: [User, Project, ProjectArea, ProjectSystem, ProjectTask, ProjectDevice, ProjectDeviceSystem, RackServedArea, DeviceNetworkProfile, DevicePort, PhysicalConnection, ConnectionEndpoint, ChecklistTemplate, ChecklistTemplateItem, ProjectInspection, InspectionItem, RemediationIssue],
+  migrations: [CreateUsers1790000000000, CreateProjectStructure1791000000000, CreateProjectTasks1792000000000, CreateProjectDevices1793000000000, CreateDeviceConnections1794000000000, EnforceConnectionEndpointPair1795000000000, AddDeviceNetworkProfileAndPortMetadata1796000000000, AddRackLayout1797000000000, EnforceRackLayoutIntegrity1798000000000, EnforceRackServedAreaForeignKey1799000000000, CreateInspections1800000000000],
   synchronize: false,
 });
