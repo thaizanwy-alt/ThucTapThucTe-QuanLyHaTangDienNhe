@@ -13,6 +13,7 @@ import TaskPanel from './TaskPanel';
 import DevicePanel from './DevicePanel';
 import ConnectionPanel from './ConnectionPanel';
 import RackWorkspace from './RackWorkspace';
+import InspectionPanel from './InspectionPanel';
 
 interface Props {
   token: string;
@@ -357,6 +358,7 @@ export default function ProjectWorkspace({ token, user, onSignOut }: Props) {
               </section>
             </div>}
             {detailReady && !rackScreen && <TaskPanel key={selectedProject.id} token={token} user={user} projectId={selectedProject.id} systems={systems} areas={areas} onSignOut={onSignOut} />}
+            {detailReady && !rackScreen && <InspectionPanel key={`inspections:${selectedProject.id}`} token={token} user={user} projectId={selectedProject.id} systems={systems} areas={areas} deviceRevision={deviceRevision} onSignOut={onSignOut} />}
             {detailReady && !rackScreen && <DevicePanel key={`devices:${selectedProject.id}`} token={token} user={user} projectId={selectedProject.id} systems={systems} areas={areas} onSignOut={onSignOut} onDeviceChanged={onDeviceChanged} />}
             {detailReady && !rackScreen && <ConnectionPanel key={`connections:${selectedProject.id}`} token={token} user={user} projectId={selectedProject.id} deviceRevision={deviceRevision} onSignOut={onSignOut} />}
           </>}

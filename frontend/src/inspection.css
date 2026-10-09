@@ -1,0 +1,22 @@
+.inspection-panel { margin-top: 24px; padding: 24px; background: var(--surface); border: 1px solid var(--line); min-width: 0; }
+.inspection-help { color: var(--muted); font-size: 13px; line-height: 1.5; max-width: 65ch; }
+.inspection-tabs, .inspection-actions { display: flex; flex-wrap: wrap; gap: 8px; margin: 12px 0; }
+.inspection-tabs [aria-pressed="true"] { background: var(--forest); color: white; }
+.inspection-list { display: grid; gap: 12px; }
+.inspection-sheet { text-align: left; display: grid; gap: 8px; padding: 18px; width: 100%; background: white; border: 1px solid var(--line); border-left: 4px solid var(--forest); cursor: pointer; }
+.inspection-sheet span { font-size: 13px; color: var(--muted); }
+.inspection-issue, .inspection-item { border-bottom: 1px solid var(--line); padding: 16px 0; }
+.inspection-issue p, .inspection-item p { line-height: 1.6; white-space: pre-wrap; }
+.inspection-state { display: inline-block; padding: 4px 8px; font-size: 12px; margin: 8px 0; background: #e5ece7; }
+.inspection-state.state-resolved { background: #edf0cc; }
+.inspection-state.state-open { background: #f9e8df; }
+.inspection-state.state-closed { color: var(--forest); }
+.inspection-dialog { width: min(720px, calc(100vw - 24px)); max-height: calc(100dvh - 24px); overflow-y: auto; }
+.inspection-panel *, .inspection-dialog * { overflow-wrap: anywhere; }
+.inspection-panel .panel-heading { align-items: flex-start; gap: 12px; }
+@media (max-width: 600px) {
+  .inspection-panel { padding: 16px; }
+  .inspection-panel .panel-heading { flex-wrap: wrap; }
+  .inspection-dialog { padding: 18px; }
+  .inspection-sheet { padding: 14px; }
+}
