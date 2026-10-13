@@ -388,6 +388,8 @@ test('Checklist/Issue PostgreSQL and HTTP contract', { timeout: 180000 }, async 
     await t.test('isolated migration down/up removes only checklist schema; existing data preserved', async () => {
       const before = {};
       for (const table of ['users', 'projects', 'project_areas', 'project_systems', 'project_devices', 'project_tasks']) before[table] = await db.query(`SELECT * FROM ${table} ORDER BY id`);
+      assert.equal((await db.query('SELECT name FROM migrations ORDER BY id DESC LIMIT 1'))[0].name, 'CreateProjectAcceptances1802000000000');
+      await db.undoLastMigration();
       assert.equal((await db.query('SELECT name FROM migrations ORDER BY id DESC LIMIT 1'))[0].name, 'CreateEvidenceAttachments1801000000000');
       await db.undoLastMigration();
       assert.equal((await db.query('SELECT name FROM migrations ORDER BY id DESC LIMIT 1'))[0].name, 'CreateInspections1800000000000');

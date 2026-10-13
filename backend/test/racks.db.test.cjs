@@ -255,6 +255,8 @@ test('Rack layout: migration, legacy data, roles, capacity, concurrency, HTTP gu
     });
 
     await t.test('down refuses to discard new enum Device data', async () => {
+      assert.equal((await db.query('SELECT name FROM migrations ORDER BY id DESC LIMIT 1'))[0].name, 'CreateProjectAcceptances1802000000000');
+      await db.undoLastMigration();
       assert.equal((await db.query('SELECT name FROM migrations ORDER BY id DESC LIMIT 1'))[0].name, 'CreateEvidenceAttachments1801000000000');
       await db.undoLastMigration();
       assert.equal((await db.query('SELECT name FROM migrations ORDER BY id DESC LIMIT 1'))[0].name, 'CreateInspections1800000000000');

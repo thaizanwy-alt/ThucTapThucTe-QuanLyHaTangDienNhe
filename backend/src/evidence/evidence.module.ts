@@ -7,5 +7,5 @@ import { EvidenceStorage } from './evidence.storage';
 import { EvidenceController, TargetEvidenceController } from './evidence.controller';
 
 @Module({ imports: [AuthModule, TypeOrmModule.forFeature([EvidenceAttachment])],
-  controllers: [TargetEvidenceController, EvidenceController], providers: [EvidenceStorage, EvidenceService] })
+  controllers: [TargetEvidenceController, EvidenceController], providers: [EvidenceStorage, EvidenceService], exports: [EvidenceStorage, EvidenceService] })
 export class EvidenceModule {}

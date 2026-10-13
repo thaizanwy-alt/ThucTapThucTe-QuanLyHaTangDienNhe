@@ -335,7 +335,10 @@ test('Evidence PostgreSQL/HTTP contract', { timeout: 180000 }, async t => {
     });
     await t.test('isolated down/up removes only evidence schema, preserves all business rows and disk',async()=>{
       const before={};for(const table of ['users','projects','project_tasks','project_inspections','inspection_items','remediation_issues']) before[table]=await db.query(`SELECT * FROM ${table} ORDER BY id`);
-      const files=await fs.readdir(path.join(root,'files')); assert.equal((await db.query('SELECT name FROM migrations ORDER BY id DESC LIMIT 1'))[0].name,'CreateEvidenceAttachments1801000000000');
+      const files=await fs.readdir(path.join(root,'files'));
+      assert.equal((await db.query('SELECT name FROM migrations ORDER BY id DESC LIMIT 1'))[0].name,'CreateProjectAcceptances1802000000000');
+      await db.undoLastMigration();
+      assert.equal((await db.query('SELECT name FROM migrations ORDER BY id DESC LIMIT 1'))[0].name,'CreateEvidenceAttachments1801000000000');
       await db.undoLastMigration(); assert.equal((await db.query("SELECT to_regclass('evidence_attachments') name"))[0].name,null);
       for(const [table,rows] of Object.entries(before)) assert.deepEqual(await db.query(`SELECT * FROM ${table} ORDER BY id`),rows);
       assert.deepEqual(await fs.readdir(path.join(root,'files')),files);await db.runMigrations();assert.equal(await db.showMigrations(),false);
