@@ -13,7 +13,7 @@ import TaskPanel from './TaskPanel';
 import DevicePanel from './DevicePanel';
 import ConnectionPanel from './ConnectionPanel';
 import RackWorkspace from './RackWorkspace';
-import InspectionPanel from './InspectionPanel';
+import InspectionWorkspace from './InspectionWorkspace';
 import './workspace.css';
 import { useDialogFocus } from './useDialogFocus';
 import { ListPreferences } from './ListView';
@@ -379,7 +379,7 @@ export default function ProjectWorkspace({ token, user, onSignOut }: Props) {
             </div>}
             {detailReady && section === 'overview' && <div className="overview-info"><div className="overview-links" aria-label="Chức năng công trình">{Object.entries(sections).filter(([key]) => key !== 'overview').map(([key, label]) => <button key={key} onClick={() => navigate(key as Section)}><strong>{label}</strong><small>{key === 'structure' ? `${areas.length} khu vực · ${systems.length} hệ thống` : `Mở hồ sơ ${label.toLowerCase()}`}</small></button>)}</div></div>}
             {detailReady && section === 'tasks' && <TaskPanel key={selectedProject.id} token={token} user={user} projectId={selectedProject.id} systems={systems} areas={areas} onSignOut={onSignOut} />}
-            {detailReady && section === 'inspections' && <InspectionPanel key={`inspections:${selectedProject.id}`} token={token} user={user} projectId={selectedProject.id} systems={systems} areas={areas} deviceRevision={deviceRevision} onSignOut={onSignOut} />}
+            {detailReady && section === 'inspections' && <InspectionWorkspace key={`inspections:${selectedProject.id}`} token={token} user={user} projectId={selectedProject.id} systems={systems} areas={areas} deviceRevision={deviceRevision} onSignOut={onSignOut} />}
             {detailReady && section === 'devices' && <DevicePanel key={`devices:${selectedProject.id}`} token={token} user={user} projectId={selectedProject.id} systems={systems} areas={areas} onSignOut={onSignOut} onDeviceChanged={onDeviceChanged} />}
             {detailReady && section === 'connections' && <ConnectionPanel key={`connections:${selectedProject.id}`} token={token} user={user} projectId={selectedProject.id} deviceRevision={deviceRevision} onSignOut={onSignOut} />}
             </div></ListPreferences>

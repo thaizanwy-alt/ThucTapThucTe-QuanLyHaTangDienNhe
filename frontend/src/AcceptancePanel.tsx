@@ -1,0 +1,89 @@
+import { useCallback, useEffect, useRef, useState } from 'react';
+import type { ReactNode } from 'react';
+import type { User } from './api/auth';
+import type { ProjectSystem } from './api/projects';
+import { ApiError } from './api/client';
+import { listInspections } from './api/inspections';
+import type { Inspection } from './api/inspections';
+import { listTasks } from './api/tasks';
+import { listEvidence } from './api/evidence';
+import type { Evidence } from './api/evidence';
+import { acceptanceBlob, confirmAcceptance, getAcceptance, getReadiness, listAcceptances, writeAcceptance } from './api/acceptances';
+import type { Acceptance, Readiness, Selection } from './api/acceptances';
+import { AcceptanceGate, blockerLabel, canConfirm, selectionPayload, saveAcceptanceAndRefresh } from './acceptance-form';
+import ListView from './ListView';
+import { useDialogFocus } from './useDialogFocus';
+import './inspection.css';
+import './acceptance.css';
+type Props={token:string;user:User;projectId:string;systems:ProjectSystem[];onSignOut:()=>void};
+type Editor={mode:'create'|'edit'|'replacement';row:Acceptance|null};
+const savedError='Đã lưu trên server nhưng chưa tải lại được, hãy tải lại trang hoặc thử lại GET. Không gửi lại thao tác ghi.';
+function Dialog({title,busy,close,children}:{title:string;busy:boolean;close:()=>void;children:ReactNode}) {
+  const ref=useDialogFocus(title);
+  useEffect(()=>{const key=(e:KeyboardEvent)=>{if(e.key==='Escape'&&!busy){e.preventDefault();close();}};window.addEventListener('keydown',key);return()=>window.removeEventListener('keydown',key);},[busy,close]);
+  return <div className="modal-backdrop"><section ref={ref} tabIndex={-1} className="modal inspection-dialog acceptance-dialog" role="dialog" aria-modal="true" aria-labelledby="acceptance-title"><div className="modal-heading"><h2 id="acceptance-title">{title}</h2><button className="icon-button" aria-label="Đóng" disabled={busy} onClick={close}>×</button></div>{children}</section></div>;
+}
+function EditorForm({editor,systems,token,projectId,busy,onSave,onUnauthorized}:{editor:Editor;systems:ProjectSystem[];token:string;projectId:string;busy:boolean;onSave:(body:object)=>void;onUnauthorized:()=>void}) {
+  const row=editor.row, edit=editor.mode==='edit';
+  const [systemId,setSystem]=useState(row?.systemId??'');
+  const [draft,setDraft]=useState<Selection>({code:edit?row!.code:'',title:edit?row!.title:'',inspectionIds:edit?row!.inspectionIds??[]:[],evidenceIds:edit?row!.evidenceIds??[]:[]});
+  const [note,setNote]=useState(edit?row?.note??'':'');const [reason,setReason]=useState('');
+  const [sources,setSources]=useState<{sheets:Inspection[];files:Evidence[]}|null>(null);const [error,setError]=useState('');const [reload,setReload]=useState(0);
+  useEffect(()=>{let alive=true;setSources(null);setError('');if(!systemId)return()=>{alive=false;};
+    (async()=>{
+      const [all,tasks]=await Promise.all([listInspections(token,projectId),listTasks(token,projectId)]);
+      const sheets=all.filter(s=>s.systemId===systemId);
+      const requests=tasks.filter(t=>t.systemId===systemId).map(t=>listEvidence(token,projectId,{kind:'task',id:t.id,status:t.status,assigneeId:t.assigneeId}));
+      for(const s of sheets)for(const item of s.items){requests.push(listEvidence(token,projectId,{kind:'item',id:item.id,inspectionId:s.id,status:item.result}));for(const issue of item.issues)requests.push(listEvidence(token,projectId,{kind:'issue',id:issue.id,status:issue.status,assigneeId:issue.assigneeId}));}
+      const files=[...new Map((await Promise.all(requests)).flat().map(f=>[f.id,f])).values()];
+      if(alive)setSources({sheets,files});
+    })().catch(e=>{if(alive){if(e instanceof ApiError&&e.status===401)onUnauthorized();setError(e instanceof Error?e.message:'Không tải được nguồn.');}});return()=>{alive=false;};
+  },[systemId,token,projectId,reload,onUnauthorized]);
+  const eligibleFor=(ids:string[])=>sources?.files.filter(f=>f.taskId || sources.sheets.some(s=>ids.includes(s.id)&&s.items.some(i=>i.id===f.inspectionItemId||i.issues.some(issue=>issue.id===f.issueId))))??[];
+  const eligible=eligibleFor(draft.inspectionIds);
+  const toggleSheet=(id:string)=>setDraft(d=>{const inspectionIds=d.inspectionIds.includes(id)?d.inspectionIds.filter(v=>v!==id):[...d.inspectionIds,id];const allowed=new Set(eligibleFor(inspectionIds).map(f=>f.id));return {...d,inspectionIds,evidenceIds:d.evidenceIds.filter(v=>allowed.has(v))};});
+  const toggle=(key:'inspectionIds'|'evidenceIds',id:string)=>setDraft(d=>({...d,[key]:d[key].includes(id)?d[key].filter(v=>v!==id):[...d[key],id]}));
+  return <form className="form-stack" onSubmit={e=>{e.preventDefault();try{const value=selectionPayload(draft);if(!systemId)throw Error('Chọn System.');if(editor.mode==='replacement'&&!reason.trim())throw Error('Nhập lý do thay thế.');setError('');onSave({...value,...(editor.mode==='create'?{systemId,note:note.trim()||null}:edit?{expectedVersion:row!.version,note:note.trim()||null}:{reason:reason.trim()})});}catch(c){setError((c as Error).message);}}}>
+    {error&&<p className="error-note" role="alert">{error}</p>}
+    <label>Mã hồ sơ<input required maxLength={100} value={draft.code} onChange={e=>setDraft({...draft,code:e.target.value})}/></label><label>Tên hồ sơ<input required maxLength={255} value={draft.title} onChange={e=>setDraft({...draft,title:e.target.value})}/></label>
+    <label>System<select required disabled={!!row} value={systemId} onChange={e=>{setSystem(e.target.value);setDraft({...draft,inspectionIds:[],evidenceIds:[]});}}><option value="">Chọn hệ thống</option>{systems.map(s=><option key={s.id} value={s.id}>{s.code} — {s.name}</option>)}</select></label>
+    {editor.mode==='replacement'?<label>Lý do thay thế<textarea required maxLength={2000} value={reason} onChange={e=>setReason(e.target.value)}/></label>:<label>Ghi chú<textarea maxLength={2000} value={note} onChange={e=>setNote(e.target.value)}/></label>}
+    {systemId&&!sources&&<p role="status">{error?'Nguồn chưa tải được.':'Đang tải phiếu và minh chứng…'} <button type="button" className="button button-quiet" onClick={()=>setReload(n=>n+1)}>Tải lại nguồn</button></p>}
+    {sources&&<><fieldset><legend>Phiếu cùng System</legend>{!sources.sheets.length&&<p>Chưa có phiếu. Có thể lưu nháp với danh sách rỗng.</p>}{sources.sheets.map(s=><label className="acceptance-choice" key={s.id}><input type="checkbox" checked={draft.inspectionIds.includes(s.id)} onChange={()=>toggleSheet(s.id)}/>{s.code} — {s.title} ({s.passed?'Đạt':'Chưa đạt'})</label>)}</fieldset>
+    <fieldset><legend>Minh chứng được chọn rõ ràng (không bắt buộc)</legend>{eligible.map(f=><label className="acceptance-choice" key={f.id}><input type="checkbox" checked={draft.evidenceIds.includes(f.id)} onChange={()=>toggle('evidenceIds',f.id)}/>{f.originalName} — {f.caption??'Không chú thích'}</label>)}{!eligible.length&&<p>Chưa có minh chứng phù hợp.</p>}
+    {draft.evidenceIds.filter(id=>!eligible.some(f=>f.id===id)).map(id=><label className="acceptance-choice" key={id}><input type="checkbox" checked onChange={()=>toggle('evidenceIds',id)}/>Minh chứng không còn phù hợp: {id} — bỏ chọn để lưu</label>)}</fieldset></>}
+    <p className="inspection-help">Chỉ xác nhận phạm vi phiếu được chọn, không phải toàn bộ System hay công trình.</p><button className="button" disabled={busy||!sources}>{busy?'Đang lưu…':'Lưu nháp'}</button>
+  </form>;
+}
+export default function AcceptancePanel({token,user,projectId,systems,onSignOut}:Props) {
+  const manager=user.role==='MANAGER';const [rows,setRows]=useState<Acceptance[]|null>(null);const [detail,setDetail]=useState<Acceptance|null>(null);const [editor,setEditor]=useState<Editor|null>(null);const [ready,setReady]=useState<Readiness|null>(null);const [error,setError]=useState('');const [busy,setBusy]=useState(false);const [loading,setLoading]=useState(false);const [notice,setNotice]=useState('');const [preview,setPreview]=useState<string|null>(null);
+  const [reading,setReading]=useState(false);
+  const view=useRef<{projectId:string;id:string|null;mode:'detail'|'editor'|null}>({projectId,id:null,mode:null});
+  const gate=useRef(new AcceptanceGate());const alive=useRef(true);const urls=useRef(new Set<string>());const fileRevision=useRef(0);
+  const clearFiles=useCallback(()=>{fileRevision.current++;for(const url of urls.current)URL.revokeObjectURL(url);urls.current.clear();setPreview(null);},[]);
+  useEffect(()=>{alive.current=true;return()=>{alive.current=false;gate.current.next();fileRevision.current++;for(const url of urls.current)URL.revokeObjectURL(url);urls.current.clear();};},[]);
+  const fail=useCallback((e:unknown)=>{if(e instanceof ApiError&&e.status===401)onSignOut();setError(e instanceof ApiError&&e.status===409?'409: Dữ liệu hoặc phiên bản đã đổi. Giữ nội dung đã nhập; tải lại hồ sơ/readiness trước khi xác nhận.':e instanceof Error?e.message:'Không tải được hồ sơ.');},[onSignOut]);
+  const refresh=useCallback(async()=>{const request=gate.current.next();setRows(null);setLoading(true);setError('');try{const data=await listAcceptances(token,projectId);if(alive.current&&gate.current.current(request))setRows(data);}catch(e){if(alive.current&&gate.current.current(request)){fail(e);throw e;}}finally{if(alive.current&&gate.current.current(request))setLoading(false);}},[token,projectId,fail]);
+  useEffect(()=>{view.current={projectId,id:null,mode:null};setBusy(false);setReading(false);setDetail(null);setEditor(null);setReady(null);clearFiles();void refresh().catch(()=>{});return()=>{gate.current.next();};},[refresh,clearFiles]);
+  async function open(row:Acceptance){const request=gate.current.next();view.current={projectId,id:row.id,mode:'detail'};setBusy(false);setReading(false);clearFiles();setReady(null);setDetail(null);setEditor(null);setError('');setLoading(true);try{const data=await getAcceptance(token,projectId,row.id);if(alive.current&&gate.current.current(request))setDetail(data);}catch(e){if(alive.current&&gate.current.current(request))fail(e);}finally{if(alive.current&&gate.current.current(request))setLoading(false);}}
+  function close(){gate.current.next();view.current={projectId,id:null,mode:null};setBusy(false);setReading(false);clearFiles();setDetail(null);setEditor(null);setReady(null);setError('');}
+  async function save(body:object){if(!editor)return;const current=editor;setBusy(true);setError('');try{const refreshed=await saveAcceptanceAndRefresh(()=>writeAcceptance(token,projectId,current.row?.id??null,current.mode,body),()=>{close();setRows(null);setNotice('Đã lưu trên server.');},refresh,()=>alive.current);if(refreshed===false&&alive.current)setNotice(savedError);}catch(e){if(alive.current)fail(e);}finally{if(alive.current)setBusy(false);}}
+  async function reloadEditorVersion(){if(!editor?.row)return;const request=gate.current.next();setBusy(true);try{const fresh=await getAcceptance(token,projectId,editor.row.id);if(alive.current&&gate.current.current(request)){if(fresh.status!=='DRAFT'&&editor.mode==='edit')throw new ApiError(409,'Hồ sơ đã khóa');setEditor({...editor,row:fresh});setError('Đã tải phiên bản mới; nội dung nhập vẫn giữ nguyên. Rà lựa chọn trước khi lưu.');}}catch(e){if(alive.current&&gate.current.current(request))fail(e);}finally{if(alive.current&&gate.current.current(request))setBusy(false);}}
+  async function readiness(){if(!detail||editor||busy)return;const id=detail.id;const request=gate.current.next();const current=()=>alive.current&&gate.current.current(request)&&view.current.projectId===projectId&&view.current.id===id&&view.current.mode==='detail';setReady(null);setBusy(true);setReading(true);setError('');try{const [data,r]=await Promise.all([getAcceptance(token,projectId,detail.id),getReadiness(token,projectId,detail.id)]);if(current()){setDetail(data);setReady(r);}}catch(e){if(current())fail(e);}finally{if(current()){setBusy(false);setReading(false);}}}
+  async function confirm(){if(!detail||!ready||!canConfirm(detail,ready,manager))return;setBusy(true);setError('');const r=ready;setReady(null);try{await confirmAcceptance(token,projectId,detail.id,r);if(!alive.current)return;close();setRows(null);setNotice('Đã xác nhận phạm vi hồ sơ trên server.');try{await refresh();}catch{if(alive.current)setNotice(savedError);}}catch(e){if(alive.current)fail(e);}finally{if(alive.current)setBusy(false);}}
+  async function file(id:string,name:string,isPreview:boolean){if(!detail||!manager)return;const request=++fileRevision.current;setError('');try{const blob=await acceptanceBlob(token,projectId,detail.id,id,isPreview);if(!alive.current||request!==fileRevision.current)return;const url=URL.createObjectURL(blob);urls.current.add(url);if(isPreview){if(preview){URL.revokeObjectURL(preview);urls.current.delete(preview);}setPreview(url);}else{const a=document.createElement('a');a.href=url;a.download=name;a.click();setTimeout(()=>{URL.revokeObjectURL(url);urls.current.delete(url);},1000);}}catch(e){if(alive.current&&request===fileRevision.current)fail(e);}}
+  function beginEditor(next:Editor){gate.current.next();view.current={projectId,id:next.row?.id??null,mode:'editor'};clearFiles();setBusy(false);setReading(false);setDetail(null);setReady(null);setLoading(false);setError('');setEditor(next);}
+  const summary=detail?.summary??detail?.snapshot?.content.summary;
+  return <section className="inspection-panel"><div className="panel-heading"><div><h2>Hồ sơ nghiệm thu</h2><p>Phạm vi được chọn, không tự đổi trạng thái công trình.</p></div>{manager&&<button className="button" disabled={!rows||busy} onClick={()=>beginEditor({mode:'create',row:null})}>Tạo hồ sơ</button>}</div>
+    {notice&&<p role="status">{notice}</p>}{error&&!editor&&!detail&&<p className="error-note" role="alert">{error}</p>}{loading&&<p role="status">Đang tải hồ sơ…</p>}
+    {!rows&&!loading&&<button className="button" onClick={()=>void refresh().catch(()=>{})}>Thử lại GET</button>}
+    {rows&&<ListView rows={rows} label="hồ sơ nghiệm thu" preferenceKey={projectId} text={r=>r.code+' '+r.title} kind={r=>r.status} className="item-list">{r=><li key={r.id}><div><strong>{r.code}</strong><p>{r.title}</p><span>{r.status==='DRAFT'?'Bản nháp':'Đã xác nhận'}{r.replacedById?' — Đã thay thế':''}</span></div><button className="button button-quiet" onClick={()=>void open(r)}>Xem hồ sơ</button></li>}</ListView>}
+    {editor&&<Dialog title={editor.mode==='replacement'?'Tạo hồ sơ thay thế':editor.mode==='edit'?'Sửa bản nháp':'Tạo hồ sơ nghiệm thu'} busy={busy} close={close}>{error&&<p className="error-note" role="alert">{error}</p>}{editor.mode==='edit'&&<button className="button button-quiet" disabled={busy} onClick={()=>void reloadEditorVersion()}>Tải phiên bản mới, giữ nội dung</button>}<EditorForm editor={editor} systems={systems} token={token} projectId={projectId} busy={busy} onSave={body=>void save(body)} onUnauthorized={onSignOut}/></Dialog>}
+    {!editor&&detail&&<Dialog title={`${detail.code} — ${detail.title}`} busy={busy&&!reading} close={close}>{error&&<p className="error-note" role="alert">{error}</p>}<p>{detail.status} · {detail.replacedById?'Đã được thay thế':'Chưa có bản thay thế xác nhận'}</p><p className="inspection-help">Hồ sơ chỉ xác nhận phạm vi phiếu đã chọn. Không kết luận toàn bộ System/Project đạt nghiệm thu.</p>
+      {summary&&<p>{summary.inspectionCount} phiếu · {summary.itemCount} mục · {summary.evidenceCount} minh chứng</p>}
+      {!manager&&<p>System: {detail.system?.code} — {detail.system?.name}. Xác nhận: {detail.confirmedAt&&new Date(detail.confirmedAt).toLocaleString('vi-VN')}</p>}
+      {manager&&detail.status==='DRAFT'&&<><p>{detail.inspectionIds?.length??0} phiếu được chọn · {detail.evidenceIds?.length??0} minh chứng</p><div className="panel-actions"><button className="button" disabled={busy} onClick={()=>beginEditor({mode:'edit',row:detail})}>Sửa nháp</button><button className="button button-quiet" disabled={busy} onClick={()=>void readiness()}>Tải lại readiness</button></div>{ready&&<><h3>Điều kiện xác nhận</h3>{ready.blockers.length?<ul>{ready.blockers.map(b=><li key={b}>{blockerLabel(b)}</li>)}</ul>:<p>Đủ điều kiện tại thời điểm kiểm tra.</p>}<button className="button" disabled={busy||!canConfirm(detail,ready,manager)} onClick={()=>void confirm()}>Xác nhận phạm vi đã chọn</button></>}</>}
+      {manager&&detail.snapshot&&<><h3>Snapshot đã xác nhận</h3><p>{detail.snapshot.content.project.code} — {detail.snapshot.content.project.name}</p><p>{detail.snapshot.content.system.code} — {detail.snapshot.content.system.name}</p><p>{detail.snapshot.content.acceptance.note}</p>{detail.snapshot.content.inspections.map(s=><article className="acceptance-sheet" key={s.id}><h4>{s.code} — {s.title}</h4><p>{s.area?`Khu vực: ${s.area.code} — ${s.area.name}`:s.device?`Thiết bị: ${s.device.code} — ${s.device.name}`:'Không gắn Area/Device'}</p><ul>{s.items.map(i=><li key={i.id}>{i.code} — {i.title}: {i.result}{i.note&&` — ${i.note}`}</li>)}</ul></article>)}<h3>File ghim</h3>{detail.snapshot.content.evidence.map(f=><div className="acceptance-file" key={f.id}><span>{f.originalName} ({f.sizeBytes} byte) — {f.caption??'Không chú thích'}</span><button className="button button-small" onClick={()=>void file(f.id,f.originalName,false)}>Tải xuống</button>{f.mimeType.startsWith('image/')&&<button className="button button-small button-quiet" onClick={()=>void file(f.id,f.originalName,true)}>Xem ảnh</button>}</div>)}{preview&&<img className="acceptance-preview" src={preview} alt="Minh chứng ghim trong hồ sơ"/>}{!detail.replacedById&&<button className="button" onClick={()=>beginEditor({mode:'replacement',row:detail})}>Tạo bản thay thế</button>}</>}
+    </Dialog>}
+  </section>;
+}

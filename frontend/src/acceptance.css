@@ -1,0 +1,9 @@
+.acceptance-dialog { overflow-wrap: anywhere; }
+.acceptance-choice { display: flex; align-items: flex-start; gap: 10px; padding: 8px 0; }
+.acceptance-choice input { width: auto; flex: 0 0 auto; }
+.acceptance-dialog fieldset { min-width: 0; border: 1px solid var(--line); padding: 12px; }
+.acceptance-file { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 12px 0; }
+.acceptance-file span { flex: 1 1 220px; }
+.acceptance-preview { max-width: 100%; max-height: 360px; object-fit: contain; }
+.acceptance-sheet { border-top: 1px solid var(--line); margin-top: 16px; }
+@media(max-width: 480px) { .acceptance-dialog { width: 100%; } .acceptance-dialog .panel-actions { flex-wrap: wrap; } }
