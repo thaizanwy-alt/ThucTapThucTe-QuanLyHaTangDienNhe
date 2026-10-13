@@ -2,7 +2,7 @@ export class ApiError extends Error {
   constructor(public status: number, message: string) { super(message); }
 }
 
-const baseUrl = (import.meta.env.VITE_API_URL || 'http://localhost:3000').replace(/\/$/, '');
+export const baseUrl = (import.meta.env.VITE_API_URL || 'http://localhost:3000').replace(/\/$/, '');
 
 const messages: Record<number, string> = {
   400: 'Thông tin chưa hợp lệ. Hãy kiểm tra các trường đã nhập.',

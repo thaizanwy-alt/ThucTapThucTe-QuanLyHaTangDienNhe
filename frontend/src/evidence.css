@@ -1,0 +1,10 @@
+.evidence-panel { margin-top: 24px; border-top: 1px solid var(--line); padding-top: 16px; }
+.evidence-list { display: grid; gap: 12px; margin-block: 12px; }
+.evidence-row { display: grid; grid-template-columns: 88px minmax(0,1fr); gap: 12px; padding-block: 12px; border-bottom: 1px solid var(--line); overflow-wrap: anywhere; }
+.evidence-row p { margin: 5px 0; font-size: 13px; }
+.evidence-thumb { width: 88px; height: 88px; object-fit: contain; background: var(--paper); }
+.evidence-file-mark { display: grid; place-items: center; font-size: 13px; min-height: 70px; background: var(--paper); }
+.evidence-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-block: 10px; }
+.evidence-form { margin-block: 16px; padding: 12px; border: 1px solid var(--line); }
+.evidence-panel input[type=file] { max-width: 100%; font-size: 13px; }
+@media(max-width: 480px) { .evidence-row { grid-template-columns: 64px minmax(0,1fr); gap: 8px; } .evidence-thumb { width: 64px; height: 64px; } .evidence-actions .button { white-space: normal; } }

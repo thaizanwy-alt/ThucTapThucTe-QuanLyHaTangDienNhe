@@ -9,6 +9,7 @@ import {
 import type { ProjectTask, TaskInput, TaskStatus, Technician } from './api/tasks';
 import ListView from './ListView';
 import { useDialogFocus } from './useDialogFocus';
+import EvidencePanel from './EvidencePanel';
 
 interface Props {
   token: string;
@@ -237,7 +238,7 @@ export default function TaskPanel({ token, user, projectId, systems, areas, onSi
         </div>
       </li>}</ListView>}
 
-    {viewed && <TaskDialog title={viewed.title} error="" busy={false} onClose={() => setViewed(null)}><p>{viewed.code} — {statusLabels[viewed.status]}</p><p>{viewed.description || 'Không có mô tả'}</p><p>Ghi chú hoàn thành: {viewed.completionNote || 'Chưa có'}</p><p>Lý do trả việc: {viewed.returnReason || 'Không có'}</p></TaskDialog>}
+    {viewed && <TaskDialog title={viewed.title} error="" busy={false} onClose={() => setViewed(null)}><p>{viewed.code} — {statusLabels[viewed.status]}</p><p>{viewed.description || 'Không có mô tả'}</p><p>Ghi chú hoàn thành: {viewed.completionNote || 'Chưa có'}</p><p>Lý do trả việc: {viewed.returnReason || 'Không có'}</p><EvidencePanel token={token} user={user} projectId={projectId} target={{ kind: 'task', id: viewed.id, status: viewed.status, assigneeId: viewed.assigneeId }} onSignOut={onSignOut} /></TaskDialog>}
     {editor && <TaskDialog title={editor === 'new' ? 'Giao công việc' : 'Sửa công việc'} error={modalError} busy={busy} onClose={() => setEditor(null)}>
       <TaskForm initial={editor} systems={systems} areas={areas} technicians={technicians} busy={busy} onCancel={() => setEditor(null)} onSave={input => void runWrite(
         () => editor === 'new' ? createTask(token, projectId, input) : updateTask(token, projectId, editor.id, input),
