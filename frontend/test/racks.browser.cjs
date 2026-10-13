@@ -41,10 +41,11 @@ async function run() {
       await page.getByLabel('Mật khẩu', { exact: true }).fill(role === 'MANAGER' ? local.DEMO_MANAGER_PASSWORD : local.DEMO_TECHNICIAN_PASSWORD);
       await page.getByRole('button', { name: 'Đăng nhập', exact: true }).click();
       await page.locator('.project-row').filter({ hasText: project.code }).click();
-      await page.getByRole('button', { name: 'Mở sơ đồ tủ →', exact: true }).waitFor();
+      await page.locator('.overview-links').getByRole('button', { name: /Sơ đồ tủ/ }).waitFor();
     };
     const open = async () => {
-      await page.getByRole('button', { name: 'Mở sơ đồ tủ →', exact: true }).click();
+      if (!(await page.locator('.overview-links').count())) await page.getByRole('button', {name:'Về tổng quan',exact:true}).click();
+      await page.locator('.overview-links').getByRole('button', { name: /Sơ đồ tủ/ }).click();
       await page.locator('.rack-title h4').waitFor();
     };
     const selectRack = async id => {
@@ -109,6 +110,9 @@ async function run() {
 
     stage = 'DevicePanel refresh and isolated fixtures';
     await page.getByRole('button', { name: '← Tổng quan công trình', exact: true }).click();
+    await page.locator('.overview-links').getByRole('button', {name:/Thiết bị/}).click();
+    await page.getByLabel('Tìm thiết bị', {exact:true}).fill(prefix);
+    await page.getByLabel('Số dòng thiết bị', {exact:true}).selectOption('12');
     const devicePanel = page.getByRole('region', { name: 'Danh mục thiết bị' });
     const create = async (type, code, rackId) => {
       await devicePanel.getByRole('button', { name: '＋ Thiết bị', exact: true }).click();
@@ -206,7 +210,7 @@ async function run() {
     await page.getByRole('button', { name: '← Danh sách công trình', exact: true }).click();
     await page.locator('.project-row').filter({ hasText: otherProject.code }).click();
     release();
-    await page.getByRole('button', { name: 'Mở sơ đồ tủ →', exact: true }).click();
+    await page.locator('.overview-links').getByRole('button', { name: /Sơ đồ tủ/ }).click();
     assert.equal(await page.locator('.rack-mounted').filter({ hasText: 'UPS-CORE' }).count(), 0);
     await page.unrouteAll({ behavior: 'wait' });
     await page.getByRole('button', { name: 'Đăng xuất', exact: true }).click();

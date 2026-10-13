@@ -27,6 +27,7 @@ async function run() {
   const projects = await get('/projects');
   let fixture;
   for (const project of projects) {
+    if (process.env.DEVICE_PROJECT_CODE && project.code !== process.env.DEVICE_PROJECT_CODE) continue;
     const [areas, systems] = await Promise.all([get(`/projects/${project.id}/areas`), get(`/projects/${project.id}/systems`)]);
     if (areas.length && systems.length) { fixture = { project, areas, systems }; break; }
   }
@@ -49,13 +50,23 @@ async function run() {
     const page = await context.newPage();
     page.on('pageerror', () => errors.push('Browser runtime error'));
     page.on('console', message => { if (message.type() === 'error' && /same key/i.test(message.text())) errors.push('Duplicate React key'); });
+    const filterDevices = async () => {
+      await page.getByLabel('Tìm thiết bị', {exact:true}).fill(prefix);
+      await page.getByLabel('Số dòng thiết bị', {exact:true}).selectOption('12');
+    };
+    const openDevices = async () => {
+      await page.locator('.overview-links').getByRole('button', {name:/Thiết bị/}).click();
+      await page.locator('.device-loading').waitFor({ state: 'hidden' });
+      if (await page.getByLabel('Tìm thiết bị', {exact:true}).count()) await filterDevices();
+    };
     const signIn = async (email, password) => {
       await page.goto(web);
       await page.getByLabel('Email', { exact: true }).fill(email);
       await page.getByLabel('Mật khẩu', { exact: true }).fill(password);
       await page.getByRole('button', { name: 'Đăng nhập', exact: true }).click();
       await page.locator('.project-row').filter({ hasText: project.code }).click();
-      await page.getByRole('heading', { name: 'Thiết bị', exact: true }).waitFor();
+      await openDevices();
+      await page.locator('.devices-panel').getByRole('heading', { name: 'Thiết bị', exact: true }).waitFor();
       await page.locator('.device-loading').waitFor({ state: 'hidden' });
     };
     await signIn(managerEmail, local.DEMO_MANAGER_PASSWORD);
@@ -91,6 +102,9 @@ async function run() {
     for (const type of Object.keys(labels)) {
       const code = `${prefix}${type.replaceAll('_', '-')}`;
       await create(type, code, ['SWITCH', 'PATCH_PANEL'].includes(type) ? 'rack' : 'area', type === 'SWITCH');
+      await page.getByRole('dialog').waitFor({ state: 'hidden' });
+      await page.locator('.device-loading').waitFor({ state: 'hidden' });
+      await filterDevices();
       console.log(`Created through form: ${type}`);
       await findRow(code).waitFor();
       assert.ok(await findRow(code).getByText(labels[type], { exact: true }).count());
@@ -185,6 +199,8 @@ async function run() {
       assert.equal(await page.getByRole('region', { name: 'Danh mục thiết bị' }).count(), 0);
       assert.equal(await page.getByRole('region', { name: 'Công việc thi công' }).count(), 0);
       releaseOtherAreas();
+      await page.locator('.overview-links').waitFor();
+      await page.locator('.overview-links').getByRole('button',{name:/Khu vực & hệ thống/}).click();
       await page.locator('.detail-grid').waitFor();
     } finally {
       releaseOtherAreas();
@@ -206,6 +222,8 @@ async function run() {
       await projectRow(project).click();
       await originalAreasRequested;
       await projectRow(otherProject).click();
+      await page.locator('.overview-links').waitFor();
+      await page.locator('.overview-links').getByRole('button',{name:/Khu vực & hệ thống/}).click();
       await page.locator('.detail-grid').waitFor();
       const lateResponse = page.waitForResponse(response => response.url() === originalAreasUrl && response.status() === 200);
       releaseOriginalAreas();
@@ -213,8 +231,8 @@ async function run() {
       await page.waitForTimeout(100);
       assert.equal(await page.locator('.title-line h2').innerText(), otherProject.name);
       assert.equal(await page.locator('.detail-grid').count(), 1);
-      assert.equal(await page.getByRole('region', { name: 'Danh mục thiết bị' }).count(), 1);
-      assert.equal(await page.getByRole('region', { name: 'Công việc thi công' }).count(), 1);
+      assert.equal(await page.getByRole('region', { name: 'Danh mục thiết bị' }).count(), 0);
+      assert.equal(await page.getByRole('region', { name: 'Công việc thi công' }).count(), 0);
       assert.equal(await findRow(swCode).count(), 0);
       const shownAreaCodes = (await page.locator('.area-copy small').allTextContents()).map(value => value.split(' · ')[0]).sort();
       const shownSystemCodes = (await page.locator('.system-row .system-copy small').allTextContents()).map(value => value.split(' · ')[0]).sort();
@@ -226,6 +244,7 @@ async function run() {
     }
     console.log('PASS direct A → B: old detail hidden while B loads; late A GET cannot replace B');
     await projectRow(project).click();
+    await openDevices();
     await findRow(swCode).waitFor();
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth), false);
     if (process.env.DEVICE_ARTIFACT_DIR) {
@@ -235,8 +254,9 @@ async function run() {
     await page.setViewportSize({ width: 390, height: 844 });
     await page.reload();
     await page.locator('.project-row').filter({ hasText: project.code }).click();
+    await openDevices();
     await findRow(swCode).waitFor();
-    assert.equal(await panel.locator('.device-row').count(), before.length + 6);
+    assert.equal(await panel.locator('.device-row').count(), 6);
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth), false);
     if (process.env.DEVICE_ARTIFACT_DIR) {
       await panel.scrollIntoViewIfNeeded();
@@ -256,10 +276,11 @@ async function run() {
     await page.getByRole('dialog').getByRole('button', { name: 'Đóng', exact: true }).last().click();
     await page.reload();
     await page.locator('.project-row').filter({ hasText: project.code }).click();
+    await openDevices();
     await findRow(swCode).waitFor();
-    assert.equal(await panel.locator('.device-row').count(), before.length + 6);
-    assert.equal(await page.getByRole('region', { name: 'Công việc thi công', exact: true }).count(), 1);
-    console.log('PASS reload persistence, TECHNICIAN read-only/full view, Task panel present, 390px page/dialog without horizontal overflow');
+    assert.equal(await panel.locator('.device-row').count(), 6);
+    assert.equal(await page.getByRole('region', { name: 'Công việc thi công', exact: true }).count(), 0);
+    console.log('PASS reload persistence, TECHNICIAN read-only/full view, Task panel absent in Device section, 390px page/dialog without horizontal overflow');
     assert.deepEqual(errors, []);
   } finally {
     await browser.close();

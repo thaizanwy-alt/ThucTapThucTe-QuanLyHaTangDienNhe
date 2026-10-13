@@ -7,6 +7,8 @@ import {
   approveTask, createTask, listTasks, listTechnicians, returnTask, startTask, submitTask, updateTask,
 } from './api/tasks';
 import type { ProjectTask, TaskInput, TaskStatus, Technician } from './api/tasks';
+import ListView from './ListView';
+import { useDialogFocus } from './useDialogFocus';
 
 interface Props {
   token: string;
@@ -40,6 +42,7 @@ function messageOf(cause: unknown): string {
 function TaskDialog({ title, error, busy, onClose, children }: {
   title: string; error: string; busy: boolean; onClose: () => void; children: ReactNode;
 }) {
+  const ref = useDialogFocus(title);
   useEffect(() => {
     const escape = (event: KeyboardEvent) => { if (event.key === 'Escape' && !busy) onClose(); };
     window.addEventListener('keydown', escape);
@@ -49,7 +52,7 @@ function TaskDialog({ title, error, busy, onClose, children }: {
   return <div className="modal-backdrop" onMouseDown={event => {
     if (event.target === event.currentTarget && !busy) onClose();
   }}>
-    <section className="modal" role="dialog" aria-modal="true" aria-labelledby="task-dialog-title">
+    <section ref={ref} tabIndex={-1} className="modal" role="dialog" aria-modal="true" aria-labelledby="task-dialog-title">
       <div className="modal-heading"><h2 id="task-dialog-title">{title}</h2><button type="button" className="icon-button" onClick={onClose} disabled={busy} aria-label="Đóng">×</button></div>
       {error && <div className="error-note modal-error" role="alert">{error}</div>}
       {children}
@@ -139,6 +142,7 @@ export default function TaskPanel({ token, user, projectId, systems, areas, onSi
   const [notice, setNotice] = useState('');
   const [busy, setBusy] = useState(false);
   const [editor, setEditor] = useState<TaskEditor>(null);
+  const [viewed, setViewed] = useState<ProjectTask | null>(null);
   const [noteAction, setNoteAction] = useState<NoteAction>(null);
   const [modalError, setModalError] = useState('');
   const taskRequest = useRef(0);
@@ -208,7 +212,7 @@ export default function TaskPanel({ token, user, projectId, systems, areas, onSi
   };
   const canCreate = manager && techniciansReady && technicians.length > 0 && systems.length > 0;
 
-  return <section className="tasks-panel" aria-label="Công việc thi công">
+  return <section className="tasks-panel" aria-busy={busy || loading} aria-label="Công việc thi công">
     <div className="panel-heading task-panel-heading">
       <div><span className="section-kicker">Theo dõi thực hiện</span><h3>Công việc</h3></div>
       {manager && <button className="button button-small" disabled={!canCreate || loading || refreshFailed || busy} onClick={() => openEditor('new')}>＋ Giao việc</button>}
@@ -221,20 +225,19 @@ export default function TaskPanel({ token, user, projectId, systems, areas, onSi
     {error && <div className="error-note" role="alert">{error}{refreshFailed ? <button className="retry-inline" onClick={() => void reloadTasks()}>Tải lại công việc</button> : <button onClick={() => setError('')} aria-label="Đóng thông báo">×</button>}</div>}
     {loading ? <div className="task-loading" role="status"><span className="spinner" />Đang tải danh sách công việc…</div> : refreshFailed ? <div className="task-unavailable">Danh sách cũ đã được ẩn để tránh thao tác lặp. Hãy tải lại công việc hoặc tải lại trang.</div> : tasks.length === 0 ?
       <div className="empty-panel task-empty"><span className="empty-mark">✓</span><h4>{manager ? 'Chưa có công việc' : 'Bạn chưa được giao việc'}</h4><p>{manager ? 'Giao công việc đầu tiên sau khi đã có hạng mục và kỹ thuật viên.' : 'Khi được giao việc, bạn sẽ thấy công việc tại đây.'}</p>{canCreate && <button className="text-button" onClick={() => openEditor('new')}>Giao công việc đầu tiên</button>}</div> :
-      <ol className="task-list">{tasks.map(task => <li className={`task-row task-status-${task.status.toLowerCase()}`} key={task.id}>
+      <ListView rows={tasks} label="công việc" className="task-list" text={t => `${t.code} ${t.title} ${systemName(t.systemId)} ${areaName(t.areaId)} ${assigneeName(t.assigneeId)}`} kind={t => statusLabels[t.status]}>{task => <li className={`task-row task-status-${task.status.toLowerCase()}`} key={task.id}>
         <div className="task-main"><div className="task-title"><span className="task-code">{task.code}</span><h4>{task.title}</h4></div><span className="task-state">{statusLabels[task.status]}</span></div>
         <div className="task-meta"><span><strong>Hạng mục</strong>{systemName(task.systemId)}</span><span><strong>Khu vực</strong>{areaName(task.areaId)}</span>{manager && <span><strong>Kỹ thuật viên</strong>{assigneeName(task.assigneeId)}</span>}</div>
-        {task.description && <p className="task-description">{task.description}</p>}
-        {task.returnReason && <div className="task-note task-return-note"><strong>Cần khắc phục</strong><span>{task.returnReason}</span></div>}
-        {task.completionNote && <div className="task-note"><strong>Ghi chú hoàn thành</strong><span>{task.completionNote}</span></div>}
+        <button className="text-button" onClick={() => setViewed(task)}>Xem chi tiết</button>
         <div className="task-actions">
           {manager && (task.status === 'ASSIGNED' || task.status === 'RETURNED') && <button className="button button-small button-quiet" disabled={busy || !techniciansReady} onClick={() => openEditor(task)}>Sửa / giao lại</button>}
           {manager && task.status === 'SUBMITTED' && <><button className="button button-small" disabled={busy} onClick={() => { if (window.confirm(`Duyệt công việc “${task.title}”?`)) void runWrite(() => approveTask(token, projectId, task.id), 'Đã duyệt công việc.'); }}>Duyệt</button><button className="button button-small button-quiet" disabled={busy} onClick={() => openNote(task, 'return')}>Trả việc</button></>}
           {!manager && (task.status === 'ASSIGNED' || task.status === 'RETURNED') && <button className="button button-small" disabled={busy} onClick={() => void runWrite(() => startTask(token, projectId, task.id), 'Đã bắt đầu công việc.')}>Bắt đầu</button>}
           {!manager && task.status === 'IN_PROGRESS' && <button className="button button-small" disabled={busy} onClick={() => openNote(task, 'submit')}>Gửi duyệt</button>}
         </div>
-      </li>)}</ol>}
+      </li>}</ListView>}
 
+    {viewed && <TaskDialog title={viewed.title} error="" busy={false} onClose={() => setViewed(null)}><p>{viewed.code} — {statusLabels[viewed.status]}</p><p>{viewed.description || 'Không có mô tả'}</p><p>Ghi chú hoàn thành: {viewed.completionNote || 'Chưa có'}</p><p>Lý do trả việc: {viewed.returnReason || 'Không có'}</p></TaskDialog>}
     {editor && <TaskDialog title={editor === 'new' ? 'Giao công việc' : 'Sửa công việc'} error={modalError} busy={busy} onClose={() => setEditor(null)}>
       <TaskForm initial={editor} systems={systems} areas={areas} technicians={technicians} busy={busy} onCancel={() => setEditor(null)} onSave={input => void runWrite(
         () => editor === 'new' ? createTask(token, projectId, input) : updateTask(token, projectId, editor.id, input),

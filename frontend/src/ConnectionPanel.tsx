@@ -15,6 +15,8 @@ import { allowedKinds, connectionFaceChoices, faceKey, hasDuplicateIpWarning, mi
 import { deviceLabels } from './device-form';
 import type { FaceOption } from './connection-form';
 import { invalidateTraceRequest, visibleTrace } from './trace-request';
+import ListView from './ListView';
+import { useDialogFocus } from './useDialogFocus';
 
 interface Props { token: string; user: User; projectId: string; deviceRevision: number; onSignOut: () => void }
 interface Snapshot { devices: ProjectDevice[]; ports: DevicePort[]; connections: PhysicalConnection[] }
@@ -32,12 +34,7 @@ function messageOf(error: unknown): string {
 }
 
 function Modal({ title, busy, error, onClose, children }: { title: string; busy: boolean; error: string; onClose: () => void; children: ReactNode }) {
-  const ref = useRef<HTMLElement>(null);
-  useEffect(() => {
-    const previous = document.activeElement as HTMLElement | null;
-    ref.current?.focus();
-    return () => { previous?.focus(); };
-  }, []);
+  const ref = useDialogFocus(title);
   useEffect(() => {
     const key = (event: KeyboardEvent) => { if (event.key === 'Escape' && !busy) onClose(); };
     window.addEventListener('keydown', key);
@@ -173,6 +170,7 @@ export default function ConnectionPanel({ token, user, projectId, deviceRevision
   const [trace, setTrace] = useState<{ revision: number; value: ConnectionTrace } | null>(null);
   const [traceLoading, setTraceLoading] = useState(false);
   const [traceError, setTraceError] = useState('');
+  const [traceOpen, setTraceOpen] = useState(false);
   const request = useRef(0);
   const traceRequest = useRef(0);
   const writing = useRef(false);
@@ -240,7 +238,7 @@ export default function ConnectionPanel({ token, user, projectId, deviceRevision
     const code = query.trim().toUpperCase();
     const current = ++traceRequest.current;
     setTrace(null); setTraceError(''); setTraceLoading(true);
-    try { const result = await traceConnection(token, projectId, code); if (current === traceRequest.current) setTrace({ revision: deviceRevision, value: result }); }
+    try { const result = await traceConnection(token, projectId, code); if (current === traceRequest.current) { setTrace({ revision: deviceRevision, value: result }); setTraceOpen(true); } }
     catch (cause) {
       if (current === traceRequest.current) setTraceError(messageOf(cause));
       if (cause instanceof ApiError && cause.status === 401) onSignOut();
@@ -261,7 +259,7 @@ export default function ConnectionPanel({ token, user, projectId, deviceRevision
   const close = () => { if (!writing.current) { setDialog(null); setModalError(''); } };
   const faceText = (endpoint: PhysicalConnection['a']) => `${endpoint.device.code} / ${endpoint.port.code} / ${sideLabel[endpoint.side]}${endpoint.device.rack ? ` · rack ${endpoint.device.rack.code}` : ''}`;
 
-  return <section className="connections-panel" aria-label="Cổng và kết nối">
+  return <section className="connections-panel" aria-busy={busy || loading} aria-label="Cổng và kết nối">
     <div className="panel-heading connection-heading"><div><h3>Cổng và kết nối</h3><p className="device-caption">Tra đường dây theo mã nhãn, rồi kiểm tra từng mặt cổng</p></div></div>
     {!manager && <p className="device-caption">Hồ sơ chỉ đọc. Kỹ thuật viên có thể tra cứu đường dây và cấu hình đã khai báo.</p>}
     {notice && <div className={notice.includes('Cảnh báo:') ? 'connection-warning' : 'success-note'} role="status">{notice}</div>}
@@ -276,7 +274,7 @@ export default function ConnectionPanel({ token, user, projectId, deviceRevision
             <button className="button" disabled={traceLoading}>{traceLoading ? 'Đang tra…' : 'Tra đường đi'}</button>
           </form>
           {traceError && <div className="error-note" role="alert">{traceError}</div>}
-          {activeTrace && <div className="trace-result">
+          {activeTrace && traceOpen && <Modal title="Chi tiết đường dây" busy={false} error="" onClose={() => setTraceOpen(false)}><div className="trace-result">
             <div className="trace-origin"><strong>{activeTrace.device.code} — {activeTrace.device.name}</strong><span>{typeLabel[activeTrace.device.type]}</span>
               <small>Vị trí: {activeTrace.area ? `${activeTrace.area.code} — ${activeTrace.area.name}` : 'Chưa xác định khu vực'}{activeTrace.device.rack ? ` · Rack ${activeTrace.device.rack.code}` : ''}</small></div>
             {activeTrace.device.type !== 'NETWORK_OUTLET' && <div className="trace-network"><span>IP: {activeTrace.networkProfile?.ipAddress ?? 'Chưa cấp'}</span><span>Chế độ: {activeTrace.networkProfile?.addressMode ?? 'Chưa biết'}</span><span>MAC: {activeTrace.networkProfile?.macAddress ?? 'Chưa nhập'}</span></div>}
@@ -286,7 +284,7 @@ export default function ConnectionPanel({ token, user, projectId, deviceRevision
               {path.complete && path.switchPort ? <div className="trace-complete">Đủ hồ sơ đường dây tới switch · VLAN {vlanLabel(path.switchPort.accessVlanId)} · PoE {poeLabel(path.switchPort.poeEnabled)}<small>Chưa xác nhận thiết bị online hoặc cấu hình thực tế.</small></div> :
                 <div className="trace-missing">Thiếu đoạn từ {missingFaceLabel(path.missing, devices, ports)}. Chưa tới switch.</div>}
             </div>)}
-          </div>}
+          </div></Modal>}
         </div>
 
         <div className="connection-register">
@@ -295,31 +293,31 @@ export default function ConnectionPanel({ token, user, projectId, deviceRevision
             <label className="connection-device-picker">Thiết bị<select aria-label="Xem cổng thiết bị" value={selectedDevice?.id ?? ''} onChange={event => setSelectedDeviceId(event.target.value)}>{portDevices.map(device => <option key={device.id} value={device.id}>{device.code} — {typeLabel[device.type]}</option>)}</select></label>
             {selectedDevice && ['CAMERA', 'AP'].includes(selectedDevice.type) && selectedPorts.length > 0 && <p className="device-hint">Camera/AP đã có một cổng; không thể tạo thêm.</p>}
             {selectedPorts.length === 0 ? <div className="empty-panel"><h4>Chưa có cổng</h4><p>{manager ? 'Tạo cổng để khai báo dây nối.' : 'Quản lý chưa khai báo cổng của thiết bị này.'}</p></div> :
-              <ul className="connection-port-list">{selectedPorts.map(port => <li key={port.id} className="connection-port-row">
+              <ListView key={selectedDevice?.id} preferenceKey={selectedDevice?.id} rows={selectedPorts} label="cổng" className="connection-port-list" text={p => `${p.code} ${p.description ?? ''}`} kind={p => p.sides.some(s => s.connectionId) ? 'Đã nối' : 'Trống'}>{port => <li key={port.id} className="connection-port-row">
                 <div><strong className="device-label">{port.code}</strong>{port.description && <small>{port.description}</small>}
                   {selectedDevice?.type === 'SWITCH' && <small>VLAN {vlanLabel(port.accessVlanId)} · PoE {poeLabel(port.poeEnabled)}</small>}</div>
                 <div className="connection-faces">{port.sides.map(face => <span key={face.side} className={face.connectionId ? 'face-occupied' : 'face-free'}>{sideLabel[face.side]}: {face.connectionId ? 'Đã nối' : 'Trống'}</span>)}</div>
                 {manager && <div className="device-actions"><button className="text-button" disabled={busy} onClick={() => { setDialog({ kind: 'port', port }); setModalError(''); }}>Sửa</button>
                   <button className="text-button device-delete" disabled={busy} onClick={() => { if (window.confirm(`Xóa cổng ${selectedDevice?.code} / ${port.code}? Cổng còn dây sẽ bị từ chối.`)) void runWrite(() => deletePort(token, projectId, port.deviceId, port.id), 'Đã xóa cổng.'); }}>Xóa</button></div>}
-              </li>)}</ul>}
+              </li>}</ListView>}
           </>}
         </div>
 
         <div className="connection-register">
           <div className="connection-section-title"><h4>Dây đã khai báo</h4>{manager && <button className="button button-small" disabled={busy || !canConnect} onClick={() => { setDialog({ kind: 'connection' }); setModalError(''); }}>＋ Kết nối</button>}</div>
           {connections.length === 0 ? <div className="empty-panel"><h4>Chưa có kết nối</h4><p>{manager ? 'Chọn hai mặt cổng để khai báo dây cố định hoặc dây nhảy.' : 'Đường dây sẽ xuất hiện khi quản lý bổ sung.'}</p></div> :
-            <ul className="connection-wire-list">{connections.map(connection => <li key={connection.id} className="connection-wire-row">
+            <ListView rows={connections} label="kết nối" className="connection-wire-list" text={c => `${c.label ?? ''} ${faceText(c.a)} ${faceText(c.b)}`} kind={c => kindLabel[c.kind]}>{connection => <li key={connection.id} className="connection-wire-row">
               <div><strong>{connection.label || kindLabel[connection.kind]}</strong><small>{kindLabel[connection.kind]} · Phiên bản {connection.version}</small>{connection.description && <small>{connection.description}</small>}</div>
               <div className="connection-wire-ends"><span>{faceText(connection.a)}</span><span aria-hidden="true">──</span><span>{faceText(connection.b)}</span></div>
               {manager && <div className="device-actions"><button className="text-button" disabled={busy} onClick={() => { setDialog({ kind: 'connection', connection }); setModalError(''); }}>Chuyển dây</button>
                 <button className="text-button device-delete" disabled={busy} onClick={() => { if (window.confirm(`Ngắt kết nối giữa ${faceText(connection.a)} và ${faceText(connection.b)}?`)) void runWrite(() => deleteConnection(token, projectId, connection.id), 'Đã ngắt kết nối.'); }}>Ngắt dây</button></div>}
-            </li>)}</ul>}
+            </li>}</ListView>}
         </div>
 
         <div className="connection-register">
           <div className="connection-section-title"><h4>Hồ sơ mạng camera / AP</h4><span>IP và MAC nhập tay</span></div>
           {traceable.filter(device => device.type !== 'NETWORK_OUTLET').length === 0 ? <p className="device-caption">Chưa có camera hoặc AP.</p> :
-            <ul className="connection-profile-list">{traceable.filter(device => device.type !== 'NETWORK_OUTLET').map(device => <li key={device.id}><strong>{device.code}</strong><span>{typeLabel[device.type]}</span><button className="text-button" disabled={busy} onClick={() => void loadProfile(device)}>{manager ? 'Xem / sửa hồ sơ' : 'Xem hồ sơ'}</button></li>)}</ul>}
+            <ListView rows={traceable.filter(device => device.type !== 'NETWORK_OUTLET')} label="hồ sơ mạng" className="connection-profile-list" text={d => `${d.code} ${d.name}`} kind={d => typeLabel[d.type]}>{device => <li key={device.id}><strong>{device.code}</strong><span>{typeLabel[device.type]}</span><button className="text-button" disabled={busy} onClick={() => void loadProfile(device)}>{manager ? 'Xem / sửa hồ sơ' : 'Xem hồ sơ'}</button></li>}</ListView>}
         </div>
       </>}
 

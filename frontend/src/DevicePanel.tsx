@@ -8,6 +8,7 @@ import type { ProjectArea, ProjectSystem } from './api/projects';
 import { deviceDraft, deviceLabels, devicePayload, isRackable } from './device-form';
 import type { DeviceDraft } from './device-form';
 import { saveDeviceAndNotify } from './device-refresh';
+import ListView from './ListView';
 
 interface Props {
   token: string;
@@ -198,7 +199,7 @@ export default function DevicePanel({ token, user, projectId, areas, systems, on
   const existing = dialog && dialog.kind === 'edit' ? dialog.device : undefined;
   const dateLabel = (value: string) => new Date(value).toLocaleString('vi-VN');
 
-  return <section className="devices-panel" aria-label="Danh mục thiết bị">
+  return <section className="devices-panel" aria-busy={busy || loading} aria-label="Danh mục thiết bị">
     <div className="panel-heading device-panel-heading"><div><h3>Thiết bị</h3><p className="device-caption">Mã nhãn, vị trí lắp đặt và hệ thống liên quan</p></div>
       {manager && <button className="button button-small" disabled={busy || loading || refreshFailed} onClick={() => open({ kind: 'create' })}>＋ Thiết bị</button>}
     </div>
@@ -210,11 +211,11 @@ export default function DevicePanel({ token, user, projectId, areas, systems, on
       <div className="empty-panel"><h4>Chưa có thiết bị</h4><p>{manager ? 'Ghi nhận rack, switch, ổ mạng, AP hoặc camera của công trình. Thiết bị chưa rõ vị trí vẫn có thể được lưu.' : 'Thiết bị sẽ xuất hiện khi quản lý bổ sung vào công trình.'}</p></div> : <>
         <p className="device-caption">{devices.length} thiết bị · Sắp xếp theo mã nhãn</p>
         <div className="device-register-heading" aria-hidden="true"><span>Mã nhãn / thiết bị</span><span>Vị trí</span><span>Hệ thống / thao tác</span></div>
-        <ul className="device-list">{devices.map(device => <li className="device-row" key={device.id}>
+        <ListView rows={devices} label="thiết bị" className="device-list" text={d => `${d.code} ${d.name} ${areaName(d.effectiveAreaId)} ${d.systemIds.map(systemName).join(' ')}`} kind={d => deviceLabels[d.type]}>{device => <li className="device-row" key={device.id}>
           <div className="device-identity"><button className="device-code" onClick={() => open({ kind: 'view', device })} aria-label={`Xem ${device.code}`}>{device.code}</button><strong>{device.name}</strong><span className="device-type">{deviceLabels[device.type]}</span></div>
           <div className="device-location"><span className="device-mobile-label">Vị trí</span>{device.rackId ? <><strong>{rackName(device.rackId)}</strong><span>{areaName(device.effectiveAreaId)}</span><small>Kế thừa từ rack</small></> : <span>{areaName(device.effectiveAreaId)}</span>}{device.locationNote && <small>{device.locationNote}</small>}</div>
           <div className="device-relations"><span className="device-mobile-label">Hệ thống</span><ul className="device-system-tags">{device.systemIds.length ? device.systemIds.map(id => <li key={id}>{systemName(id)}</li>) : <li>Chưa liên kết hệ thống</li>}</ul><div className="device-actions"><button className="text-button" disabled={busy} onClick={() => open({ kind: 'view', device })}>Xem đầy đủ</button>{manager && <><button className="text-button" disabled={busy} onClick={() => open({ kind: 'edit', device })}>Sửa</button><button className="text-button device-delete" disabled={busy} onClick={() => open({ kind: 'delete', device })}>Xóa</button></>}</div></div>
-        </li>)}</ul>
+        </li>}</ListView>
       </>}
 
     {dialog && <DeviceDialog title={dialog.kind === 'create' ? 'Thêm thiết bị' : dialog.kind === 'edit' ? 'Sửa thiết bị' : dialog.kind === 'delete' ? 'Xóa thiết bị' : 'Thông tin thiết bị'} busy={busy} error={modalError} onClose={close}>

@@ -33,6 +33,20 @@ async function run() {
     base = `/projects/${project.id}`;
     const system = await request(managerToken, 'POST', `${base}/systems`, { code: 'LAN-SMOKE', name: 'LAN kiểm tra', category: 'LAN' }, 201);
     const area = await request(managerToken, 'POST', `${base}/areas`, { code: 'F01', name: 'Tầng kiểm tra', type: 'FLOOR' }, 201);
+    if (process.env.INSPECTION_EMPTY_DEVICE_SMOKE === '1') {
+      assert.deepEqual(await request(managerToken, 'GET', `${base}/devices`), []);
+      const childStatus = await new Promise((resolve, reject) => {
+        const child = require('node:child_process').spawn(process.execPath, [path.join(__dirname, 'devices.browser.cjs')], {
+          env: { ...process.env, DEVICE_PROJECT_CODE: code, DEVICE_API_URL: api, DEVICE_WEB_URL: web }, stdio: 'inherit',
+        });
+        const timeout = setTimeout(() => child.kill(), 120000);
+        child.once('error', error => { clearTimeout(timeout); reject(error); });
+        child.once('close', status => { clearTimeout(timeout); resolve(status); });
+      });
+      assert.equal(childStatus, 0, 'Device smoke must pass from an empty inventory');
+      assert.deepEqual(await request(managerToken, 'GET', `${base}/devices`), []);
+      console.log('PASS Device smoke from empty inventory, search after creating fixtures, cleanup to empty');
+    }
     const device = await request(managerToken, 'POST', `${base}/devices`, { code: 'CAM-SMOKE', name: 'Camera thử riêng', type: 'CAMERA', areaId: area.id, systemIds: [system.id] }, 201);
     page = await browser.newPage({ viewport: { width: 1440, height: 1000 } }); page.on('pageerror', () => errors.push('runtime'));
     const signIn = async role => {
@@ -40,6 +54,7 @@ async function run() {
       await page.getByLabel('Mật khẩu', { exact: true }).fill(credentials(role).password);
       await page.getByRole('button', { name: 'Đăng nhập', exact: true }).click();
       await page.locator('.project-row').filter({ hasText: code }).click();
+      await page.locator('.overview-links').getByRole('button', { name: /Kiểm tra/ }).click();
       await page.locator('.inspection-panel').getByRole('heading', { name: role === 'MANAGER' ? 'Kiểm tra' : 'Lỗi được giao', exact: true }).waitFor();
       if (role === 'MANAGER') await panel().getByRole('button', { name: '＋ Tạo phiếu', exact: true }).waitFor();
     };
@@ -51,7 +66,118 @@ async function run() {
     const signedOut = async () => { await page.getByRole('button', { name: 'Đăng xuất', exact: true }).click(); };
     const selectIssues = async () => { await panel().getByRole('button', { name: 'Lỗi khắc phục', exact: true }).click(); };
     const noOverflow = async () => assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth), false);
-    stage = 'create and FAIL'; await signIn('MANAGER');
+
+    stage = 'card navigation, real Device refresh, pagination and Task';
+    const extras = [];
+    for (let i = 0; i < 7; i++) extras.push(await request(managerToken, 'POST', `${base}/devices`, { code: `NAV-CAM-${i}`, name: `Camera navigation ${i}`, type: 'CAMERA', systemIds: [system.id] }, 201));
+    const task = await request(managerToken, 'POST', `${base}/tasks`, { code: 'NAV-TASK', title: 'Việc kiểm tra navigation', systemId: system.id, assigneeId: tech.id }, 201);
+    await signIn('MANAGER');
+    const settled = () => page.waitForFunction(() => !document.querySelector('[aria-busy="true"]'));
+    const back = async () => { await settled(); await page.getByRole('button', { name: 'Về tổng quan', exact: true }).click(); await page.locator('.overview-links').waitFor(); };
+    const openSection = async name => { await page.locator('.overview-links').getByRole('button', { name: new RegExp(name) }).click(); await settled(); };
+    await back();
+    assert.equal(await page.locator('.overview-links button').count(), 6);
+    assert.equal(await page.locator('.devices-panel,.tasks-panel,.connections-panel,.inspection-panel').count(), 0);
+    for (const name of ['Khu vực & hệ thống', 'Thiết bị', 'Công việc', 'Đấu nối & tra cứu', 'Sơ đồ tủ']) { await openSection(name); await back(); }
+    stage = 'structure re-entry fetch, GET error and late response';
+    const latestAreaName = 'Tầng cập nhật từ phiên API khác';
+    await request(managerToken, 'PATCH', `${base}/areas/${area.id}`, { name: latestAreaName });
+    await request(managerToken, 'PATCH', `${base}/systems/${system.id}`, { name: 'LAN cập nhật từ phiên API khác' });
+    await openSection('Khu vực & hệ thống');
+    await page.locator('.area-copy strong').getByText(latestAreaName, { exact: true }).waitFor();
+    await page.locator('.system-copy strong').getByText('LAN cập nhật từ phiên API khác', { exact: true }).waitFor();
+    await back();
+    const failStructure = route => route.fulfill({ status: 503, contentType: 'application/json', body: '{}' });
+    await page.route(`${api}${base}/areas`, failStructure);
+    await openSection('Khu vực & hệ thống');
+    assert.equal(await page.locator('.detail-grid').count(), 0);
+    await page.getByRole('button', { name: 'Tải lại cấu trúc', exact: true }).waitFor();
+    await page.unroute(`${api}${base}/areas`, failStructure);
+    await page.getByRole('button', { name: 'Tải lại cấu trúc', exact: true }).click();
+    await page.locator('.area-copy strong').getByText(latestAreaName, { exact: true }).waitFor();
+    await back();
+    let releaseStructure, capturedStructure;
+    const heldStructure = new Promise(resolve => { releaseStructure = resolve; });
+    const structureCaptured = new Promise(resolve => { capturedStructure = resolve; });
+    await page.route(`${api}${base}/areas`, async route => { const response = await route.fetch(); capturedStructure(); await heldStructure; await route.fulfill({ response }); });
+    await page.locator('.overview-links').getByRole('button', { name: /Khu vực & hệ thống/ }).click();
+    await structureCaptured;
+    assert.equal(await page.locator('.detail-grid').count(), 0);
+    const alternate = (await request(managerToken, 'GET', '/projects')).find(p => p.id !== project.id);
+    await page.locator('.project-row').filter({ hasText: alternate.code }).click();
+    await page.locator('.overview-links').waitFor();
+    const lateStructure = page.waitForResponse(r => r.url() === `${api}${base}/areas`);
+    releaseStructure(); await lateStructure;
+    await page.locator('.overview-links').getByRole('button', { name: /Khu vực & hệ thống/ }).click(); await settled();
+    assert.equal(await page.locator('.area-copy strong').getByText(latestAreaName, { exact: true }).count(), 0);
+    await page.unroute(`${api}${base}/areas`);
+    await page.locator('.project-row').filter({ hasText: code }).click(); await page.locator('.overview-links').waitFor();
+    console.log('PASS structure re-entry: API changes visible, GET error hides old data, GET retry and late response after Project switch');
+    stage = 'card navigation, real Device refresh, pagination and Task';
+    await openSection('Thiết bị');
+    assert.equal(await page.locator('.device-row').count(), 6);
+    await page.getByRole('button', { name: 'Sau', exact: true }).click(); assert.equal(await page.locator('.device-row').count(), 2);
+    await page.getByLabel('Tìm thiết bị', { exact: true }).fill('NAV-CAM-0'); assert.equal(await page.locator('.device-row').count(), 1);
+    await page.getByLabel('Tìm thiết bị', { exact: true }).fill('');
+    await page.getByRole('button', { name: '＋ Thiết bị', exact: true }).click();
+    await dialog().getByLabel('Loại thiết bị', { exact: true }).selectOption('CAMERA');
+    await dialog().getByLabel('Mã nhãn', { exact: true }).fill('NAV-CREATED');
+    await dialog().getByLabel('Tên thiết bị', { exact: true }).fill('Camera tạo trong DevicePanel');
+    await dialog().getByRole('button', { name: 'Tạo thiết bị', exact: true }).click(); await dialog().waitFor({state:'hidden'}); await settled();
+    const created = (await request(managerToken, 'GET', `${base}/devices`)).find(d => d.code === 'NAV-CREATED'); extras.push(created);
+    await page.getByLabel('Tìm thiết bị', { exact: true }).fill('NAV-CREATED');
+    await page.locator('.device-row').getByRole('button', { name: 'Sửa', exact: true }).click();
+    await dialog().getByLabel('Tên thiết bị', { exact: true }).fill('Camera vừa cập nhật');
+    await dialog().getByRole('button', { name: 'Lưu thiết bị', exact: true }).click(); await dialog().waitFor({state:'hidden'}); await settled();
+    await back(); await openSection('Đấu nối & tra cứu');
+    await page.getByLabel('Xem cổng thiết bị', { exact: true }).selectOption(created.id);
+    assert.ok(await page.getByLabel('Xem cổng thiết bị', { exact: true }).locator('option:checked').textContent().then(t=>t.includes('NAV-CREATED')));
+    stage = 'edit port focus skips disabled/hidden controls';
+    const port = await request(managerToken, 'POST', `${base}/devices/${created.id}/ports`, { code: 'ETH1' }, 201);
+    await back(); await openSection('Đấu nối & tra cứu');
+    await page.getByLabel('Xem cổng thiết bị', { exact: true }).selectOption(created.id);
+    const portOpener = page.locator('.connection-port-row').getByRole('button', { name: 'Sửa', exact: true });
+    await portOpener.focus(); await page.keyboard.press('Enter'); await dialog().waitFor();
+    await page.waitForFunction(() => document.activeElement?.closest('label')?.textContent?.startsWith('Mã cổng'));
+    await dialog().evaluate(el => {
+      const hidden = document.createElement('button'); hidden.hidden = true; hidden.textContent = 'Hidden test'; el.append(hidden);
+      const disabled = document.createElement('fieldset'); disabled.disabled = true; disabled.innerHTML = '<input aria-label="disabled test">'; el.append(disabled);
+    });
+    for (const key of ['Tab', 'Shift+Tab']) for (let i = 0; i < 10; i++) {
+      await page.keyboard.press(key);
+      assert.equal(await dialog().evaluate(el => el.contains(document.activeElement) && !document.activeElement.matches(':disabled') && document.activeElement.getClientRects().length > 0), true);
+    }
+    await page.keyboard.press('Escape'); await dialog().waitFor({ state: 'hidden' });
+    assert.equal(await portOpener.evaluate(el => el === document.activeElement), true);
+    await request(managerToken, 'DELETE', `${base}/devices/${created.id}/ports/${port.id}`, undefined, 204);
+    console.log('PASS edit port focus: disabled/hidden controls skipped, Tab/Shift+Tab contained, Escape restores opener');
+    await back(); await page.getByRole('button', {name:'Đăng xuất',exact:true}).click();
+    await signIn('TECHNICIAN'); await back(); await openSection('Thiết bị');
+    assert.equal(await page.getByRole('button', {name:'＋ Thiết bị',exact:true}).count(),0);
+    await back(); await openSection('Công việc');
+    stage = 'last ASSIGNED task starts while its filter remains selected';
+    await page.getByLabel('Lọc công việc', { exact: true }).selectOption({ label: 'Đã giao' });
+    await page.locator('.task-row').getByRole('button', {name:'Bắt đầu',exact:true}).click(); await settled();
+    assert.equal(await page.getByLabel('Lọc công việc', { exact: true }).inputValue(), 'Đã giao');
+    assert.equal(await page.getByLabel('Lọc công việc', { exact: true }).locator('option:checked').textContent(), 'Đã giao (0)');
+    assert.equal(await page.locator('.task-row').count(), 0);
+    console.log('PASS last ASSIGNED task starts: selected filter retained as Đã giao (0), no phantom rows');
+    await page.getByLabel('Lọc công việc', { exact: true }).selectOption('');
+    await page.locator('.task-row').getByRole('button', {name:'Gửi duyệt',exact:true}).click();
+    await dialog().getByRole('textbox').fill('Đã làm theo fixture navigation');
+    await dialog().getByRole('button', {name:'Gửi duyệt',exact:true}).click(); await dialog().waitFor({state:'hidden'}); await settled();
+    await back(); await signedOut(); await signIn('MANAGER'); await back(); await openSection('Công việc');
+    page.once('dialog', d => d.accept());
+    await page.locator('.task-row').getByRole('button', {name:'Duyệt',exact:true}).click(); await settled();
+    assert.equal((await request(managerToken,'GET',`${base}/tasks`)).find(t=>t.id===task.id).status,'APPROVED');
+    await back();
+    const other = (await request(managerToken,'GET','/projects')).find(p=>p.id!==project.id);
+    await page.locator('.project-row').filter({hasText:other.code}).click(); await page.locator('.overview-links').waitFor();
+    assert.equal(await page.locator('.task-row,.device-row').count(),0);
+    await page.locator('.project-row').filter({hasText:code}).click(); await page.locator('.overview-links').waitFor();
+    await page.locator('.overview-links').getByRole('button',{name:/Kiểm tra/}).focus(); await page.keyboard.press('Enter'); await settled();
+    for (const extra of extras) await request(managerToken,'DELETE',`${base}/devices/${extra.id}`,undefined,204);
+    stage = 'create and FAIL';
     await panel().getByRole('button', { name: '＋ Tạo phiếu', exact: true }).click();
     await dialog().getByLabel('Mã phiếu', { exact: true }).fill('CHECK-01'); await dialog().getByLabel('Tên phiếu', { exact: true }).fill('Phiếu smoke');
     await dialog().getByLabel('System', { exact: true }).selectOption(system.id);
@@ -79,7 +205,7 @@ async function run() {
       await panel().getByRole('button', { name: 'Báo đã sửa', exact: true }).click();
       await dialog().getByLabel('Ghi chú khắc phục', { exact: true }).fill(pass ? 'Đã sửa lại' : 'Đã sửa lần đầu');
       await dialog().getByRole('button', { name: 'Báo đã sửa', exact: true }).click(); await dialog().waitFor({ state: 'hidden' });
-      await page.reload(); await page.locator('.project-row').filter({ hasText: code }).click(); await panel().getByText('Chờ kiểm tra lại', { exact: true }).waitFor();
+      await page.reload(); await page.locator('.project-row').filter({ hasText: code }).click(); await page.locator('.overview-links').getByRole('button', { name: /Kiểm tra/ }).click(); await panel().locator('.inspection-state').filter({ hasText: 'Chờ kiểm tra lại' }).waitFor();
       await signedOut(); await signIn('MANAGER'); await selectIssues();
       await panel().getByRole('button', { name: 'Kiểm tra lại', exact: true }).click();
       await dialog().getByLabel('Kết quả kiểm tra lại', { exact: true }).selectOption(pass ? 'PASS' : 'FAIL');
@@ -97,7 +223,7 @@ async function run() {
     await page.keyboard.press('Shift+Tab'); assert.equal(await dialog().evaluate(el => el.contains(document.activeElement)), true); await page.keyboard.press('Escape');
     await page.setViewportSize({ width: 390, height: 844 }); await noOverflow(); await openSheet(); await noOverflow();
     if (process.env.INSPECTION_ARTIFACT_DIR) await page.screenshot({ path: path.join(process.env.INSPECTION_ARTIFACT_DIR, 'inspection-mobile.png'), fullPage: true });
-    await close(); await page.reload(); await page.locator('.project-row').filter({ hasText: code }).click(); await panel().getByText('Phiếu đạt', { exact: false }).waitFor();
+    await close(); await page.reload(); await page.locator('.project-row').filter({ hasText: code }).click(); await page.locator('.overview-links').getByRole('button', { name: /Kiểm tra/ }).click(); await panel().getByText('Phiếu đạt', { exact: false }).waitFor();
     stage = 'POST success followed by GET failure and GET-only retry';
     let posts = 0; page.on('request', r => { if (r.method() === 'POST' && r.url() === `${api}${base}/inspections`) posts++; });
     await panel().getByRole('button', { name: '＋ Tạo phiếu', exact: true }).click();
@@ -108,13 +234,16 @@ async function run() {
     await panel().getByText('Đã lưu trên server nhưng chưa tải lại được', { exact: false }).waitFor();
     assert.equal(await panel().locator('.inspection-sheet').count(), 0); assert.equal(posts, 1);
     assert.equal(await panel().getByRole('button', { name: '＋ Tạo phiếu', exact: true }).isDisabled(), true);
+    await back();
+    await page.getByRole('alert').filter({hasText:'Đã lưu trên server'}).waitFor();
+    await openSection('Kiểm tra');
     await page.unroute(`${api}${base}/inspections`); await panel().getByRole('button', { name: 'Tải lại hồ sơ', exact: true }).click();
     await panel().locator('.inspection-sheet').filter({ hasText: 'CHECK-GET-FAIL' }).waitFor(); assert.equal(posts, 1);
     await noOverflow(); assert.deepEqual(errors, []);
     const finalSheets = await request(managerToken, 'GET', `${base}/inspections`);
     assert.equal(finalSheets.length, 2);
     assert.equal((await request(managerToken, 'GET', '/projects')).filter(p => projectCodesBefore.includes(p.code)).length, projectCodesBefore.length);
-    console.log(`Chrome/API smoke passed; trial Project ${code}: 2 inspections, 6 items, 1 CLOSED issue retained (no DELETE API).`);
+    console.log(`Chrome/API smoke passed; trial Project ${code}: 2 inspections, 6 items, 1 CLOSED issue, 1 APPROVED Task retained (no DELETE API); 8 extra Devices cleaned.`);
   } catch (error) {
     if (page && process.env.INSPECTION_ARTIFACT_DIR) await page.screenshot({ path: path.join(process.env.INSPECTION_ARTIFACT_DIR, 'inspection-failure.png'), fullPage: true }).catch(() => {});
     throw error;

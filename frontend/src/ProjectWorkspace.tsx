@@ -14,6 +14,11 @@ import DevicePanel from './DevicePanel';
 import ConnectionPanel from './ConnectionPanel';
 import RackWorkspace from './RackWorkspace';
 import InspectionPanel from './InspectionPanel';
+import './workspace.css';
+import { useDialogFocus } from './useDialogFocus';
+import { ListPreferences } from './ListView';
+const sections = { overview: 'Tổng quan', structure: 'Khu vực & hệ thống', devices: 'Thiết bị', tasks: 'Công việc', connections: 'Đấu nối & tra cứu', inspections: 'Kiểm tra', racks: 'Sơ đồ tủ' } as const;
+type Section = keyof typeof sections;
 
 interface Props {
   token: string;
@@ -41,6 +46,7 @@ function messageOf(error: unknown): string {
 }
 
 function Modal({ title, onClose, error, children }: { title: string; onClose: () => void; error: string; children: ReactNode }) {
+  const ref = useDialogFocus(title);
   useEffect(() => {
     const escape = (event: KeyboardEvent) => { if (event.key === 'Escape') onClose(); };
     window.addEventListener('keydown', escape);
@@ -49,7 +55,7 @@ function Modal({ title, onClose, error, children }: { title: string; onClose: ()
 
   return (
     <div className="modal-backdrop" onMouseDown={event => { if (event.target === event.currentTarget) onClose(); }}>
-      <section className="modal" role="dialog" aria-modal="true" aria-labelledby="modal-title">
+      <section ref={ref} tabIndex={-1} className="modal" role="dialog" aria-modal="true" aria-labelledby="modal-title">
         <div className="modal-heading"><h2 id="modal-title">{title}</h2><button className="icon-button" onClick={onClose} aria-label="Đóng">×</button></div>
         {error && <div className="error-note modal-error" role="alert">{error}</div>}
         {children}
@@ -136,8 +142,19 @@ export default function ProjectWorkspace({ token, user, onSignOut }: Props) {
   const [areas, setAreas] = useState<ProjectArea[]>([]);
   const [systems, setSystems] = useState<ProjectSystem[]>([]);
   const [deviceRevision, setDeviceRevision] = useState(0);
-  const [rackScreenProjectId, setRackScreenProjectId] = useState<string | null>(null);
-  const rackScreen = selectedId !== null && rackScreenProjectId === selectedId;
+  const [section, setSection] = useState<Section>('overview');
+  const contentRef = useRef<HTMLDivElement>(null);
+  const [sectionWarning, setSectionWarning] = useState('');
+  const rackScreen = section === 'racks';
+  function navigate(next: Section) {
+    if (contentRef.current?.querySelector('[role="dialog"], [aria-busy="true"]')) { setSectionWarning('Hãy đóng hộp thoại hoặc chờ thao tác đang thực hiện trước khi chuyển mục.'); return; }
+    const warning = Array.from(contentRef.current?.querySelectorAll('[role="alert"], .connection-warning') ?? []).map(node => node.textContent).join(' ');
+    if (warning) setSectionWarning(`${sections[section]}: ${warning}. Mở lại mục để tải mới bằng GET.`);
+    if (next === 'structure' && selectedId) void refreshDetail(selectedId);
+    setSection(next);
+  }
+  useEffect(() => { setSection('overview'); setSectionWarning(''); }, [selectedId]);
+  useEffect(() => { (section === 'overview' ? document.querySelector<HTMLElement>('.overview-links button') : document.getElementById('function-title'))?.focus(); }, [section]);
   const [loadedDetailId, setLoadedDetailId] = useState<string | null>(null);
   const [loadingProjects, setLoadingProjects] = useState(true);
   const [loadingDetail, setLoadingDetail] = useState(false);
@@ -187,7 +204,7 @@ export default function ProjectWorkspace({ token, user, onSignOut }: Props) {
 
   const refreshDetail = useCallback(async (projectId: string, failureMessage?: string): Promise<boolean> => {
     const requestId = ++detailRequest.current;
-    setLoadingDetail(true); setLoadedDetailId(null); setError('');
+    setLoadingDetail(true); setLoadedDetailId(null); setDetailRefreshFailed(false); setError('');
     try {
       const [areaRows, systemRows] = await Promise.all([listAreas(token, projectId), listSystems(token, projectId)]);
       if (requestId === detailRequest.current) {
@@ -329,12 +346,15 @@ export default function ProjectWorkspace({ token, user, onSignOut }: Props) {
               <div><button className="back-projects" onClick={() => setSelectedId(null)}>← Danh sách công trình</button><div className="title-line"><span className="project-code">{selectedProject.code}</span><h2>{selectedProject.name}</h2></div><p className="project-address">{selectedProject.address || 'Chưa cập nhật địa chỉ'}</p></div>
               <div className="detail-actions"><span className={`status-label status-label-${selectedProject.status.toLowerCase()}`}>{statusLabels[selectedProject.status]}</span>{manager && <button className="button button-quiet" onClick={() => openProjectEditor(selectedProject)}>Sửa hồ sơ</button>}</div>
             </div>
-            {selectedProject.description && <p className="project-description">{selectedProject.description}</p>}
-            {!manager && <div className="read-only-note">Bạn chỉ có thể cập nhật công việc được giao; hồ sơ công trình ở chế độ chỉ đọc.</div>}
+            {section === 'overview' && selectedProject.description && <p className="project-description">{selectedProject.description}</p>}
+            {section !== 'overview' && <div className="function-heading"><button className="button button-quiet" onClick={() => navigate('overview')}>Về tổng quan</button><h3 tabIndex={-1} id="function-title">{sections[section]}</h3></div>}
+            {sectionWarning && <div className="error-note" role="alert">{sectionWarning}<button onClick={() => setSectionWarning('')} aria-label="Đóng cảnh báo mục">×</button></div>}
+            <ListPreferences key={`${selectedProject.id}:${section}`}><div ref={contentRef}>
+            {!manager && <div className="read-only-note">Bạn được cập nhật công việc và lỗi khắc phục được giao; danh mục công trình ở chế độ chỉ đọc.</div>}
             {notice && <div className="success-note" role="status">{notice}<button onClick={() => setNotice('')} aria-label="Đóng thông báo">×</button></div>}
             {error && <div className="error-note" role="alert">{error}<button onClick={() => setError('')} aria-label="Đóng thông báo">×</button></div>}
-            {detailReady && <RackWorkspace key={`racks:${selectedProject.id}`} token={token} user={user} projectId={selectedProject.id} areas={areas} systems={systems} deviceRevision={deviceRevision} expanded={rackScreen} onOpen={() => setRackScreenProjectId(selectedProject.id)} onBack={() => setRackScreenProjectId(null)} onSignOut={onSignOut} />}
-            {detailRefreshFailed ? <div className="detail-loading">Dữ liệu chưa được tải lại.</div> : !detailReady ? <div className="detail-loading" role="status"><span className="spinner" />Đang tải cấu trúc công trình…</div> : !rackScreen && <div className="detail-grid">
+            {detailReady && rackScreen && <RackWorkspace key={`racks:${selectedProject.id}`} token={token} user={user} projectId={selectedProject.id} areas={areas} systems={systems} deviceRevision={deviceRevision} expanded={rackScreen} onOpen={() => navigate('racks')} onBack={() => navigate('overview')} onSignOut={onSignOut} />}
+            {detailRefreshFailed ? <div className="detail-loading">Dữ liệu chưa được tải lại.<button className="retry-inline" onClick={() => { if (selectedId) void refreshDetail(selectedId); }}>Tải lại cấu trúc</button></div> : !detailReady ? <div className="detail-loading" role="status"><span className="spinner" />Đang tải cấu trúc công trình…</div> : section === 'structure' && <div className="detail-grid">
               <section className="structure-panel">
                 <div className="panel-heading"><div><span className="section-kicker">Không gian</span><h3>Tầng và phòng</h3></div>{manager && <div className="menu-wrap"><button className="button button-small button-quiet" onClick={() => beginArea('FLOOR')}>＋ Tầng</button></div>}</div>
                 {areas.length === 0 ? <div className="empty-panel"><span className="empty-mark">⌂</span><h4>Chưa có tầng hoặc phòng</h4><p>Thêm tầng trước, sau đó đặt các phòng bên dưới.</p>{manager && <button className="text-button" onClick={() => beginArea('FLOOR')}>Thêm tầng đầu tiên</button>}</div> : <div className="area-tree">
@@ -357,10 +377,12 @@ export default function ProjectWorkspace({ token, user, onSignOut }: Props) {
                 </li>)}</ul>}
               </section>
             </div>}
-            {detailReady && !rackScreen && <TaskPanel key={selectedProject.id} token={token} user={user} projectId={selectedProject.id} systems={systems} areas={areas} onSignOut={onSignOut} />}
-            {detailReady && !rackScreen && <InspectionPanel key={`inspections:${selectedProject.id}`} token={token} user={user} projectId={selectedProject.id} systems={systems} areas={areas} deviceRevision={deviceRevision} onSignOut={onSignOut} />}
-            {detailReady && !rackScreen && <DevicePanel key={`devices:${selectedProject.id}`} token={token} user={user} projectId={selectedProject.id} systems={systems} areas={areas} onSignOut={onSignOut} onDeviceChanged={onDeviceChanged} />}
-            {detailReady && !rackScreen && <ConnectionPanel key={`connections:${selectedProject.id}`} token={token} user={user} projectId={selectedProject.id} deviceRevision={deviceRevision} onSignOut={onSignOut} />}
+            {detailReady && section === 'overview' && <div className="overview-info"><div className="overview-links" aria-label="Chức năng công trình">{Object.entries(sections).filter(([key]) => key !== 'overview').map(([key, label]) => <button key={key} onClick={() => navigate(key as Section)}><strong>{label}</strong><small>{key === 'structure' ? `${areas.length} khu vực · ${systems.length} hệ thống` : `Mở hồ sơ ${label.toLowerCase()}`}</small></button>)}</div></div>}
+            {detailReady && section === 'tasks' && <TaskPanel key={selectedProject.id} token={token} user={user} projectId={selectedProject.id} systems={systems} areas={areas} onSignOut={onSignOut} />}
+            {detailReady && section === 'inspections' && <InspectionPanel key={`inspections:${selectedProject.id}`} token={token} user={user} projectId={selectedProject.id} systems={systems} areas={areas} deviceRevision={deviceRevision} onSignOut={onSignOut} />}
+            {detailReady && section === 'devices' && <DevicePanel key={`devices:${selectedProject.id}`} token={token} user={user} projectId={selectedProject.id} systems={systems} areas={areas} onSignOut={onSignOut} onDeviceChanged={onDeviceChanged} />}
+            {detailReady && section === 'connections' && <ConnectionPanel key={`connections:${selectedProject.id}`} token={token} user={user} projectId={selectedProject.id} deviceRevision={deviceRevision} onSignOut={onSignOut} />}
+            </div></ListPreferences>
           </>}
         </section>
       </main>
