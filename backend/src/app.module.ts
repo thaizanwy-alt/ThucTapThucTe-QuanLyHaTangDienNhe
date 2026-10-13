@@ -10,6 +10,7 @@ import { DevicesModule } from './devices/devices.module';
 import { ConnectionsModule } from './connections/connections.module';
 import { RacksModule } from './devices/racks.module';
 import { InspectionsModule } from './inspections/inspections.module';
+import { EvidenceModule } from './evidence/evidence.module';
 
 @Module({
   imports: [
@@ -37,6 +38,7 @@ import { InspectionsModule } from './inspections/inspections.module';
     ConnectionsModule,
     RacksModule,
     InspectionsModule,
+    EvidenceModule,
   ],
   controllers: [HealthController],
 })

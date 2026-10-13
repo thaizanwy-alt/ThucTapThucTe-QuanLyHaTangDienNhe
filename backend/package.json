@@ -12,7 +12,9 @@
     "seed:demo": "node scripts/seed-demo.cjs",
     "seed:checklists": "npm run build && node dist/database/seed-checklists.js",
     "test": "npm run build && node --test --test-reporter=spec test/roles.guard.test.cjs test/projects.test.cjs test/tasks.test.cjs test/devices.test.cjs test/connections.test.cjs test/network-profile.test.cjs test/inspections.test.cjs",
-    "test:db": "npm run build && node --test --test-concurrency=1 --test-reporter=spec test/tasks.db.test.cjs test/tasks.http.test.cjs test/devices.db.test.cjs test/devices.http.test.cjs test/connections.db.test.cjs test/network-profile.db.test.cjs test/racks.db.test.cjs test/inspections.db.test.cjs",
+    "test:db": "npm run build && node --test --test-concurrency=1 --test-reporter=spec test/tasks.db.test.cjs test/tasks.http.test.cjs test/devices.db.test.cjs test/devices.http.test.cjs test/connections.db.test.cjs test/network-profile.db.test.cjs test/racks.db.test.cjs test/inspections.db.test.cjs test/evidence.db.test.cjs",
+    "test:evidence:db": "npm run build && node --test --test-reporter=spec test/evidence.db.test.cjs",
+    "evidence:reconcile": "npm run build && node dist/database/evidence-reconcile.js",
     "test:inspections:db": "npm run build && node --test --test-reporter=spec test/inspections.db.test.cjs",
     "test:connections:db": "npm run build && node --test --test-reporter=spec test/connections.db.test.cjs",
     "test:network:db": "npm run build && node --test --test-reporter=spec test/network-profile.db.test.cjs",
@@ -26,6 +28,7 @@
     "@nestjs/platform-express": "^11.0.0",
     "@nestjs/typeorm": "^11.0.0",
     "bcryptjs": "^3.0.3",
+    "busboy": "^1.6.0",
     "class-transformer": "^0.5.1",
     "class-validator": "^0.15.1",
     "dotenv": "^17.4.1",
@@ -36,6 +39,7 @@
   },
   "devDependencies": {
     "@nestjs/cli": "^11.0.0",
+    "@types/busboy": "^1.5.5",
     "@types/express": "^5.0.6",
     "@types/node": "^22.0.0",
     "typescript": "^5.7.0"
