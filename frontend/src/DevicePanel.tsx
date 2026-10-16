@@ -9,6 +9,7 @@ import { deviceDraft, deviceLabels, devicePayload, isRackable } from './device-f
 import type { DeviceDraft } from './device-form';
 import { saveDeviceAndNotify } from './device-refresh';
 import ListView from './ListView';
+import ExportDownloadButton from './ExportDownloadButton';
 
 interface Props {
   token: string;
@@ -200,8 +201,8 @@ export default function DevicePanel({ token, user, projectId, areas, systems, on
   const dateLabel = (value: string) => new Date(value).toLocaleString('vi-VN');
 
   return <section className="devices-panel" aria-busy={busy || loading} aria-label="Danh mục thiết bị">
-    <div className="panel-heading device-panel-heading"><div><h3>Thiết bị</h3><p className="device-caption">Mã nhãn, vị trí lắp đặt và hệ thống liên quan</p></div>
-      {manager && <button className="button button-small" disabled={busy || loading || refreshFailed} onClick={() => open({ kind: 'create' })}>＋ Thiết bị</button>}
+    <div className="panel-heading device-panel-heading export-panel-heading"><div><h3>Thiết bị</h3><p className="device-caption">Mã nhãn, vị trí lắp đặt và hệ thống liên quan</p>{manager&&<p className="export-context">Excel phản ánh dữ liệu công trình hiện tại, không phải snapshot nghiệm thu.</p>}</div>
+      {manager && <div className="export-heading-actions"><ExportDownloadButton token={token} projectId={projectId} kind="devices" label="Xuất Excel thiết bị" onSignOut={onSignOut}/><button className="button button-small" disabled={busy || loading || refreshFailed} onClick={() => open({ kind: 'create' })}>＋ Thiết bị</button></div>}
     </div>
     {!manager && <p className="device-caption">Danh mục chỉ đọc. Liên hệ quản lý khi cần thay đổi thông tin thiết bị.</p>}
     {notice && <div className="success-note" role="status">{notice}</div>}

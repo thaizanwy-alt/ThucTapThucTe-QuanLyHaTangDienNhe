@@ -1,0 +1,10 @@
+.export-control { min-width: 0; }
+.export-error { max-width: 34rem; margin: 6px 0 0; color: var(--danger); font-size: 13px; line-height: 1.45; overflow-wrap: anywhere; }
+.export-heading-actions { display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: flex-end; gap: 8px; }
+.export-context { margin: 6px 0 0; color: var(--muted); font-size: 13px; line-height: 1.4; }
+@media (max-width: 600px) {
+  .export-panel-heading { flex-wrap: wrap; }
+  .export-heading-actions { width: 100%; justify-content: flex-start; }
+  .export-heading-actions .export-control { flex: 1 1 auto; }
+  .export-heading-actions .button { white-space: normal; }
+}

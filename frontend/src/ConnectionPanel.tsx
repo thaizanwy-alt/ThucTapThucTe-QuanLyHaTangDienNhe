@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { FormEvent, ReactNode } from 'react';
 import type { User } from './api/auth';
 import { ApiError } from './api/client';
+import ExportDownloadButton from './ExportDownloadButton';
 import {
   createConnection, createPort, deleteConnection, deletePort, getNetworkProfile, listConnections,
   listPorts, putNetworkProfile, rewireConnection, traceConnection, updatePort,
@@ -260,7 +261,8 @@ export default function ConnectionPanel({ token, user, projectId, deviceRevision
   const faceText = (endpoint: PhysicalConnection['a']) => `${endpoint.device.code} / ${endpoint.port.code} / ${sideLabel[endpoint.side]}${endpoint.device.rack ? ` · rack ${endpoint.device.rack.code}` : ''}`;
 
   return <section className="connections-panel" aria-busy={busy || loading} aria-label="Cổng và kết nối">
-    <div className="panel-heading connection-heading"><div><h3>Cổng và kết nối</h3><p className="device-caption">Tra đường dây theo mã nhãn, rồi kiểm tra từng mặt cổng</p></div></div>
+    <div className="panel-heading connection-heading export-panel-heading"><div><h3>Cổng và kết nối</h3><p className="device-caption">Tra đường dây theo mã nhãn, rồi kiểm tra từng mặt cổng</p>{manager&&<p className="export-context">Excel phản ánh cổng, dây và đoạn thiếu hiện tại; không phải snapshot nghiệm thu.</p>}</div>
+      {manager&&<div className="export-heading-actions"><ExportDownloadButton token={token} projectId={projectId} kind="connections" label="Xuất Excel đấu nối" onSignOut={onSignOut}/></div>}</div>
     {!manager && <p className="device-caption">Hồ sơ chỉ đọc. Kỹ thuật viên có thể tra cứu đường dây và cấu hình đã khai báo.</p>}
     {notice && <div className={notice.includes('Cảnh báo:') ? 'connection-warning' : 'success-note'} role="status">{notice}</div>}
     {error && <div className="error-note" role="alert">{error}{refreshFailed && <button className="retry-inline" onClick={() => void reload()}>Tải lại kết nối</button>}</div>}
