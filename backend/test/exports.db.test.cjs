@@ -7,7 +7,7 @@ const os = require('node:os');
 const path = require('node:path');
 const { Client } = require('pg');
 const { DataSource } = require('typeorm');
-const ExcelJS = require('exceljs');
+const readWorkbook = require('./read-xlsx.cjs');
 const { dataSource } = require('../dist/database/data-source');
 const { ExportsService, validSnapshot } = require('../dist/exports/exports.service');
 const { workbook, pdf, RowBudget, exportLimits } = require('../dist/exports/exports.render');
@@ -184,7 +184,7 @@ test('handover exports: isolated PostgreSQL, HTTP, PDF and XLSX', { timeout: 180
 
     await runCase('XLSX is real, text-safe, PoE false preserved, trace from same snapshot', async () => {
       const deviceFile = await service.devicesWorkbook(project.id, manager);
-      const deviceBook = new ExcelJS.Workbook(); await deviceBook.xlsx.readFile(deviceFile.path); await deviceFile.cleanup();
+      const deviceBook = await readWorkbook(deviceFile.path); await deviceFile.cleanup();
       assert.deepEqual(deviceBook.worksheets.map(sheet => sheet.name), ['Thông tin', 'Thiết bị', 'Tủ']);
       assert.equal(deviceBook.getWorksheet('Thông tin').rowCount, 5);
       assert.equal(deviceBook.getWorksheet('Thiết bị').rowCount, 7);
@@ -195,10 +195,10 @@ test('handover exports: isolated PostgreSQL, HTTP, PDF and XLSX', { timeout: 180
       assert.match(currentProject.name, /[À-ỹ]/u, 'Vietnamese project name survives XLSX readback');
       const cameraRow = [...deviceBook.getWorksheet('Thiết bị').getRows(2, 3)].find(r => r.getCell(1).value === camera.code);
       assert.equal(cameraRow.getCell(2).value, "'=HYPERLINK(\"unsafe\")");
-      assert.equal(cameraRow.getCell(2).type, ExcelJS.ValueType.String);
+      assert.equal(cameraRow.getCell(2).type, 'string');
       assert.equal(cameraRow.getCell(16).value, null, 'unassigned IP is blank, not an invented address');
       const connectionFile = await service.connectionsWorkbook(project.id, manager);
-      const connectionBook = new ExcelJS.Workbook(); await connectionBook.xlsx.readFile(connectionFile.path); await connectionFile.cleanup();
+      const connectionBook = await readWorkbook(connectionFile.path); await connectionFile.cleanup();
       assert.deepEqual(connectionBook.worksheets.map(sheet => sheet.name), ['Thông tin', 'Cổng', 'Dây', 'Tra cứu']);
       assert.equal(connectionBook.getWorksheet('Thông tin').rowCount, 5);
       assert.equal(connectionBook.getWorksheet('Cổng').rowCount, 9);
@@ -229,7 +229,7 @@ test('handover exports: isolated PostgreSQL, HTTP, PDF and XLSX', { timeout: 180
       assert.equal((await db.getRepository(ProjectDevice).findOneBy({ id: camera.id })).name, '=HYPERLINK("unsafe")');
       const stableService = new ExportsService(stable, new EvidenceStorage());
       const file = await stableService.devicesWorkbook(project.id, manager);
-      const book = new ExcelJS.Workbook(); await book.xlsx.readFile(file.path); await file.cleanup();
+      const book = await readWorkbook(file.path); await file.cleanup();
       const row = [...book.getWorksheet('Thiết bị').getRows(2, 3)].find(r => r.getCell(1).value === camera.code);
       assert.equal(row.getCell(2).value, "'=HYPERLINK(\"unsafe\")");
       assert.equal((await db.getRepository(ProjectDevice).findOneBy({ id: camera.id })).name, 'Changed concurrently');
@@ -274,6 +274,33 @@ test('handover exports: isolated PostgreSQL, HTTP, PDF and XLSX', { timeout: 180
       }
       assert.equal((await get(`${f}/acceptances/${acceptance.id}/export.pdf`, manager)).status, 404);
       assert.equal((await get(`${f}/exports/devices.xlsx`, manager)).status, 200);
+      // The first request holds the process slot while current() is paused before its DB query.
+      const slotService = app.get(ExportsService), originalCurrent = slotService.current;
+      let currentCalls = 0, enteredCurrent, continueCurrent;
+      const currentEntered = new Promise(resolve => { enteredCurrent = resolve; });
+      const currentGate = new Promise(resolve => { continueCurrent = resolve; });
+      slotService.current = async function (...args) {
+        currentCalls++;
+        if (currentCalls === 1) { enteredCurrent(); await currentGate; }
+        return originalCurrent.apply(this, args);
+      };
+      try {
+        const firstRequest = get(`${p}/exports/devices.xlsx`, manager);
+        await bounded(currentEntered, 5000);
+        const busy = await get(`${p}/exports/connections.xlsx`, manager);
+        assert.equal(busy.status, 503, 'parallel XLSX request is rejected, not queued');
+        assert.equal(busy.headers.get('retry-after'), '1');
+        assert.equal(currentCalls, 1, 'busy request is refused before data queries');
+        continueCurrent();
+        const firstResponse = await bounded(firstRequest, 30000);
+        assert.equal(firstResponse.status, 200);
+        await firstResponse.arrayBuffer();
+        const nextResponse = await bounded(get(`${p}/exports/connections.xlsx`, manager), 30000);
+        assert.equal(nextResponse.status, 200, 'a later request proceeds after the prior worker exits');
+        await nextResponse.arrayBuffer();
+        assert.equal(currentCalls, 2);
+      } finally { continueCurrent(); slotService.current = originalCurrent; }
+
       // Exercise the real guarded route/pipeline with a large temporary response.
       const folder = await fs.mkdtemp(path.join(os.tmpdir(), 'elv-export-abort-'));
       const downloadPath = path.join(folder, 'document'), size = 8 * 1024 * 1024;
@@ -297,12 +324,31 @@ test('handover exports: isolated PostgreSQL, HTTP, PDF and XLSX', { timeout: 180
         await assert.rejects(fs.stat(folder), error => error.code === 'ENOENT');
       } finally { actual.devicesWorkbook = original; await fs.rm(folder, { recursive: true, force: true }); }
 
+      // Abort while XLSX is still being prepared (before response headers exist).
+      let started, workerPid;
+      const workerStarted = new Promise(resolve => { started = resolve; });
+      actual.devicesWorkbook = (_projectId, _user, signal) => workbook('slow.xlsx',
+        [{ name: 'STALL', columns: ['A'], rows: [['a']] }], { xlsxTimeoutMs: 5000 }, signal,
+        { path: path.join(__dirname, 'fixtures', 'xlsx-worker-fault.cjs'), onStart: pid => { workerPid = pid; started(); } });
+      try {
+        const request = require('node:http').get(base + p + '/exports/devices.xlsx',
+          { headers: { Authorization: 'Bearer ' + jwt.sign({ sub: manager.id }) } });
+        request.on('error', () => undefined);
+        await bounded(workerStarted, 5000);
+        request.destroy();
+        await bounded(new Promise(resolve => {
+          const check = () => { try { process.kill(workerPid, 0); setTimeout(check, 20); } catch { resolve(); } };
+          check();
+        }), 5000);
+      } finally { actual.devicesWorkbook = original; }
+
       await app.close(); app = undefined;
     });
 
     await runCase('configurable row/page/byte boundaries stop render and clean temporary files', async () => {
       const font = path.join(__dirname, '../dist/exports/fonts/NotoSans.ttf');
-      assert.deepEqual(exportLimits(), { maxBytes: 20 * 1024 * 1024, maxRows: 10000, maxPages: 200 });
+      assert.deepEqual(exportLimits(), { maxBytes: 20 * 1024 * 1024, maxRows: 10000, maxPages: 200,
+        maxInputBytes: 8 * 1024 * 1024, xlsxTimeoutMs: 60000 });
       const sheets = [{ name: 'A', columns: ['A'], rows: [['one'], ['two']] }, { name: 'B', columns: ['B'], rows: [['three']] }];
       await (await workbook('fits.xlsx', sheets, { maxRows: 5 })).cleanup();
       await rejects(workbook('over.xlsx', sheets, { maxRows: 4 }), 413);

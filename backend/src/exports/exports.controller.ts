@@ -8,6 +8,7 @@ import { RolesGuard } from '../auth/roles.guard';
 import { UserRole } from '../users/user-role.enum';
 import { ExportsService } from './exports.service';
 import type { PreparedExport } from './exports.render';
+import { XlsxBusyException } from './xlsx-process-slot';
 
 @Controller('projects/:projectId')
 @UseGuards(JwtAuthGuard, RolesGuard)
@@ -23,12 +24,31 @@ export class ExportsController {
 
   @Get('exports/devices.xlsx')
   async devices(@Param('projectId', ParseUUIDPipe) projectId: string, @Req() req: AuthenticatedRequest, @Res() res: Response) {
-    return this.send(await this.exports.devicesWorkbook(projectId, req.user), res);
+    return this.sendWorkbook(res, signal => this.exports.devicesWorkbook(projectId, req.user, signal));
   }
 
   @Get('exports/connections.xlsx')
   async connections(@Param('projectId', ParseUUIDPipe) projectId: string, @Req() req: AuthenticatedRequest, @Res() res: Response) {
-    return this.send(await this.exports.connectionsWorkbook(projectId, req.user), res);
+    return this.sendWorkbook(res, signal => this.exports.connectionsWorkbook(projectId, req.user, signal));
+  }
+
+  private async sendWorkbook(res: Response, prepare: (signal: AbortSignal) => Promise<PreparedExport>): Promise<void> {
+    const abort = new AbortController();
+    const onClose = () => abort.abort();
+    const unavailable = () => abort.signal.aborted || res.destroyed || res.writableEnded;
+    res.once('close', onClose);
+    let file: PreparedExport | undefined;
+    try {
+      file = await prepare(abort.signal);
+      // The worker may finish after the peer has disconnected. Do not start headers or a new stream then.
+      if (unavailable()) { await file.cleanup(); return; }
+      await this.send(file, res);
+    } catch (error) {
+      if (unavailable()) return;
+      if (error instanceof XlsxBusyException) res.setHeader('Retry-After', '1');
+      throw error;
+    }
+    finally { res.off('close', onClose); }
   }
 
   private async send(file: PreparedExport, res: Response): Promise<void> {

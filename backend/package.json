@@ -11,7 +11,7 @@
     "seed": "npm run build && node dist/database/seed.js",
     "seed:demo": "node scripts/seed-demo.cjs",
     "seed:checklists": "npm run build && node dist/database/seed-checklists.js",
-    "test": "npm run build && node --test --test-reporter=spec test/roles.guard.test.cjs test/projects.test.cjs test/tasks.test.cjs test/devices.test.cjs test/connections.test.cjs test/network-profile.test.cjs test/inspections.test.cjs test/acceptances.test.cjs",
+    "test": "npm run build && node --test --test-reporter=spec test/roles.guard.test.cjs test/projects.test.cjs test/tasks.test.cjs test/devices.test.cjs test/connections.test.cjs test/network-profile.test.cjs test/inspections.test.cjs test/acceptances.test.cjs test/exports.worker.test.cjs",
     "test:db": "npm run build && node --test --test-concurrency=1 --test-reporter=spec test/tasks.db.test.cjs test/tasks.http.test.cjs test/devices.db.test.cjs test/devices.http.test.cjs test/connections.db.test.cjs test/network-profile.db.test.cjs test/racks.db.test.cjs test/inspections.db.test.cjs test/evidence.db.test.cjs test/acceptances.db.test.cjs test/exports.db.test.cjs",
     "test:evidence:db": "npm run build && node --test --test-reporter=spec test/evidence.db.test.cjs",
     "evidence:reconcile": "npm run build && node dist/database/evidence-reconcile.js",
@@ -21,7 +21,7 @@
     "test:racks:db": "npm run build && node --test --test-reporter=spec test/racks.db.test.cjs",
     "test:acceptances": "npm run build && node --test --test-reporter=spec test/acceptances.test.cjs",
     "test:acceptances:db": "npm run build && node --test --test-reporter=spec test/acceptances.db.test.cjs",
-    "test:exports:db": "npm run build && node --test --test-reporter=spec test/exports.db.test.cjs"
+    "test:exports:db": "npm run build && node --test --test-concurrency=1 --test-reporter=spec test/exports.worker.test.cjs test/exports.db.test.cjs"
   },
   "dependencies": {
     "@nestjs/common": "^11.0.0",
@@ -35,12 +35,12 @@
     "class-transformer": "^0.5.1",
     "class-validator": "^0.15.1",
     "dotenv": "^17.4.1",
-    "exceljs": "^4.4.0",
     "pdfkit": "^0.20.2",
     "pg": "^8.13.0",
     "reflect-metadata": "^0.2.2",
     "rxjs": "^7.8.0",
-    "typeorm": "^0.3.20"
+    "typeorm": "^0.3.20",
+    "write-excel-file": "4.1.1"
   },
   "devDependencies": {
     "@nestjs/cli": "^11.0.0",

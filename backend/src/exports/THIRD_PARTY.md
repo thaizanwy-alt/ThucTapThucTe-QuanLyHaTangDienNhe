@@ -3,23 +3,18 @@
 Verified 2026-10-16; these notes do not modify package license metadata.
 
 - PDFKit 0.20.2: MIT. Upstream: https://github.com/foliojs/pdfkit/blob/v0.20.2/LICENSE
-- ExcelJS 4.4.0: MIT. Upstream: https://github.com/exceljs/exceljs/blob/v4.4.0/LICENSE
+- write-excel-file 4.1.1: MIT; published npm manifest declares Node >=18 and `fflate ^0.8.2`.
+  Upstream license: https://github.com/catamphetamine/write-excel-file/blob/master/LICENSE
+- read-excel-file 9.3.10: MIT, test-only reader; dependencies in the published manifest:
+  `fflate ^0.8.3`, `saxen ^11.1.0`, `worker-f ^0.1.12`, `unzipper-esm ^0.13.3`.
+  Upstream license: https://github.com/catamphetamine/read-excel-file/blob/master/LICENSE
+- Installed `fflate` is 0.8.3 (MIT), the patched version for
+  https://github.com/advisories/GHSA-px8p-9vwx-vf98.
 - Noto Sans: SIL Open Font License 1.1; bundled font and full notice in `fonts/`.
   Source: https://github.com/google/fonts/tree/main/ofl/notosans
   Font SHA-256: bfb7bb691513f12e734dc346c03a03f784912432d7e3fa8e56efcf906fe86b3d.
 
-## buffers 0.1.1: unresolved upstream license
-
-Dependency chain: ExcelJS → unzipper → binary → buffers.
-The installed published package has no license field, LICENSE file or license
-notice in README/index.js. Its package.json identifies James Halliday and
-http://github.com/substack/node-buffers.git as upstream.
-
-On 2026-10-16, both the official upstream repository and this historical commit
-returned HTTP 404:
-- https://github.com/substack/node-buffers
-- https://github.com/substack/node-buffers/commit/1b745ee35d33eb166e15ef1866073a07c6d7de87
-
-A third-party mirror declares MIT/X11, but that is insufficient to verify the
-published package's license from official upstream. License remains unconfirmed;
-no MIT assignment or manual lockfile change was made. Resolve before distribution.
+The old ExcelJS → unzipper → binary → buffers chain is absent after npm uninstall;
+`npm explain exceljs` and `npm explain buffers` report no matching dependency.
+`npm audit --omit=dev` reported zero advisories on 2026-10-16. This is a
+point-in-time check, not a guarantee against future advisories.

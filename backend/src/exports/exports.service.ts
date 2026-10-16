@@ -19,7 +19,8 @@ import { ConnectionEndpoint } from '../connections/connection-endpoint.entity';
 import { EndpointEnd, PortSide } from '../connections/connection.enums';
 import { AcceptanceEvidence, AcceptanceSnapshot, AcceptanceStatus, ProjectAcceptance } from '../acceptances/acceptance.entities';
 import { EvidenceStorage } from '../evidence/evidence.storage';
-import { EXPORT_LIMITS, ExportLimits, exportLimits, fileName, pdf, pdfTable, PDF_TEXT_FEATURES, PreparedExport, RowBudget, Sheet, text, workbook } from './exports.render';
+import { EXPORT_LIMITS, ExportLimits, exportLimits, fileName, InputBudget, pdf, pdfTable, PDF_TEXT_FEATURES, PreparedExport, RowBudget, Sheet, text, workbook } from './exports.render';
+import { acquireXlsxProcessSlot } from './xlsx-process-slot';
 
 type Snapshot = { project: {code:string;name:string}; system:{code:string;name:string}; acceptance:{code:string;title:string;note:string|null;replacesId:string|null;replacementReason:string|null};
   inspections: Array<{code:string;title:string;area?:{code:string;name:string}|null;device?:{code:string;name:string}|null;
@@ -170,40 +171,47 @@ export class ExportsService {
   private info(project:Project,at:Date):Sheet {return {name:'Thông tin',columns:['Thuộc tính','Giá trị'],rows:[
     ['Phạm vi',`${project.code} — ${project.name}`],['Nguồn','Dữ liệu hiện tại, không phải snapshot nghiệm thu'],
     ['Thời điểm đọc UTC',at.toISOString()],['Thời điểm xuất UTC',new Date().toISOString()]]};}
-  async devicesWorkbook(projectId:string,user:AuthenticatedUser):Promise<PreparedExport> {
-    manager(user);const g=await this.current(projectId, 'devices');
-    const budget = new RowBudget(this.limits.maxRows); budget.add(7);
+  async devicesWorkbook(projectId:string,user:AuthenticatedUser,signal?:AbortSignal):Promise<PreparedExport> {
+    manager(user);const release=acquireXlsxProcessSlot();
+    try {
+    const g=await this.current(projectId, 'devices');
+    const budget = new RowBudget(this.limits.maxRows), input = new InputBudget(this.limits.maxInputBytes); budget.add(7);
+    const checked = (row: (string | number | null)[]) => { input.row(row); return row; };
     const byDevice=new Map(g.devices.map(d=>[d.id,d]));const byArea=new Map(g.areas.map(a=>[a.id,a.code]));const bySystem=new Map(g.systems.map(s=>[s.id,s.code]));
     const profiles=new Map(g.profiles.map(p=>[p.deviceId,p]));
     const rows=ordered(g.devices).map(d=>{budget.add();
       const rack=d.rackId?byDevice.get(d.rackId):null, p=profiles.get(d.id);
-      return [d.code,d.name,d.type,d.brand,d.model,d.serialNumber,
+      return checked([d.code,d.name,d.type,d.brand,d.model,d.serialNumber,
         g.links.filter(l=>l.deviceId===d.id).map(l=>bySystem.get(l.systemId)??'').sort().join(', '),
         d.areaId?byArea.get(d.areaId)??null:null,
         d.rackId?byArea.get(rack?.areaId??'')??null:byArea.get(d.areaId??'')??null,
-        d.locationNote,rack?.code??null,d.mountMode,mark(d.startU),mark(d.heightU),p?.addressMode??null,p?.ipAddress??null,p?.macAddress??null];
+        d.locationNote,rack?.code??null,d.mountMode,mark(d.startU),mark(d.heightU),p?.addressMode??null,p?.ipAddress??null,p?.macAddress??null]);
     });
-    const racks=ordered(g.devices.filter(d=>d.type===DeviceType.RACK)).map(r=>{budget.add();return [r.code,r.rackRole,byDevice.get(r.parentRackId??'')?.code??null,
-      byArea.get(r.areaId??'')??null,mark(r.capacityU),g.served.filter(s=>s.rackId===r.id).map(s=>byArea.get(s.areaId)??'').sort().join(', ')];});
-    return workbook(fileName(g.project.code,'thiet-bi',g.at)+'.xlsx',[this.info(g.project,g.at),
+    const racks=ordered(g.devices.filter(d=>d.type===DeviceType.RACK)).map(r=>{budget.add();return checked([r.code,r.rackRole,byDevice.get(r.parentRackId??'')?.code??null,
+      byArea.get(r.areaId??'')??null,mark(r.capacityU),g.served.filter(s=>s.rackId===r.id).map(s=>byArea.get(s.areaId)??'').sort().join(', ')]);});
+    return await workbook(fileName(g.project.code,'thiet-bi',g.at)+'.xlsx',[this.info(g.project,g.at),
       {name:'Thiết bị',columns:['Mã','Tên','Loại','Hãng','Model','Serial','System','Area trực tiếp','Area hiệu lực','Ghi chú vị trí','Rack','Kiểu xếp','U bắt đầu','Chiều cao U','Chế độ IP','IP','MAC'],rows},
-      {name:'Tủ',columns:['Mã','Vai trò','Tủ cha','Area đặt','Sức chứa U','Area phục vụ'],rows:racks}], this.limits);
+      {name:'Tủ',columns:['Mã','Vai trò','Tủ cha','Area đặt','Sức chứa U','Area phục vụ'],rows:racks}], this.limits, signal);
+    } finally { release(); }
   }
-  async connectionsWorkbook(projectId:string,user:AuthenticatedUser):Promise<PreparedExport> {
-    manager(user);const g=await this.current(projectId, 'connections');
-    const budget = new RowBudget(this.limits.maxRows); budget.add(8);
+  async connectionsWorkbook(projectId:string,user:AuthenticatedUser,signal?:AbortSignal):Promise<PreparedExport> {
+    manager(user);const release=acquireXlsxProcessSlot();
+    try {
+    const g=await this.current(projectId, 'connections');
+    const budget = new RowBudget(this.limits.maxRows), input = new InputBudget(this.limits.maxInputBytes); budget.add(8);
+    const checked = (row: (string | number | null)[]) => { input.row(row); return row; };
     const device=new Map(g.devices.map(d=>[d.id,d]));const port=new Map(g.ports.map(p=>[p.id,p]));
     const byConnection=new Map(g.connections.map(c=>[c.id,c]));
     const face=(id:string,side:PortSide)=>g.endpoints.find(e=>e.portId===id&&e.side===side);
     const label=(id:string)=>{const p=port.get(id);return p?`${device.get(p.deviceId)?.code??'?'} / ${p.code}`:'Cổng không tồn tại';};
     const sides=(d:ProjectDevice):PortSide[]=>[DeviceType.NETWORK_OUTLET,DeviceType.PATCH_PANEL].includes(d.type)?[PortSide.FRONT,PortSide.REAR]:[DeviceType.SWITCH,DeviceType.CAMERA,DeviceType.AP].includes(d.type)?[PortSide.SINGLE]:[];
-    const ports=ordered(g.ports).flatMap(p=>sides(device.get(p.deviceId)!).map(side=>{budget.add();return [device.get(p.deviceId)!.code,p.code,p.description,side,face(p.id,side)?.connectionId??'Trống',mark(p.accessVlanId),mark(p.poeEnabled)];}));
+    const ports=ordered(g.ports).flatMap(p=>sides(device.get(p.deviceId)!).map(side=>{budget.add();return checked([device.get(p.deviceId)!.code,p.code,p.description,side,face(p.id,side)?.connectionId??'Trống',mark(p.accessVlanId),mark(p.poeEnabled)]);}));
     const wires=g.connections.sort((a,b)=>a.id.localeCompare(b.id)).map(c=>{budget.add();const a=g.endpoints.find(e=>e.connectionId===c.id&&e.end===EndpointEnd.A),b=g.endpoints.find(e=>e.connectionId===c.id&&e.end===EndpointEnd.B);
-      return [c.label,c.kind,c.version,a?label(a.portId):'Thiếu A',a?.side??null,b?label(b.portId):'Thiếu B',b?.side??null];});
+      return checked([c.label,c.kind,c.version,a?label(a.portId):'Thiếu A',a?.side??null,b?label(b.portId):'Thiếu B',b?.side??null]);});
     const traces:(string|number|null)[][]=[];
     for(const d of ordered(g.devices.filter(d=>[DeviceType.NETWORK_OUTLET,DeviceType.CAMERA,DeviceType.AP].includes(d.type)))){
       const sourcePorts=ordered(g.ports.filter(p=>p.deviceId===d.id));
-      if(!sourcePorts.length){budget.add();traces.push([d.code,'Không có cổng','', 'Thiếu cổng',null,null,null,null]);}
+      if(!sourcePorts.length){budget.add();traces.push(checked([d.code,'Không có cổng','', 'Thiếu cổng',null,null,null,null]));}
       for(const first of sourcePorts){budget.add();let current=first.id,side=d.type===DeviceType.NETWORK_OUTLET?PortSide.REAR:PortSide.SINGLE;
         const seen=new Set<string>(),segments:string[]=[],panels:string[]=[],racks:string[]=[];let end:DevicePort|null=null,missing='';
         while(true){const key=`${current}:${side}`;if(seen.has(key)){missing='Vòng lặp';break;}seen.add(key);
@@ -221,12 +229,13 @@ export class ExportsService {
           else if(targetDevice.type===DeviceType.PATCH_PANEL&&other.side===PortSide.REAR)side=PortSide.FRONT;
           else {missing=`${label(current)} / ${other.side} (chưa hỗ trợ đoạn tiếp)`;break;}
         }
-        traces.push([d.code,first.code,segments.join(' | '),end?'Đủ khai báo tới switch':`Thiếu: ${missing}`,panels.join(', '),racks.join(', '),end?label(end.id):null,end?`${mark(end.accessVlanId)} / ${mark(end.poeEnabled)}`:null]);
+        traces.push(checked([d.code,first.code,segments.join(' | '),end?'Đủ khai báo tới switch':`Thiếu: ${missing}`,panels.join(', '),racks.join(', '),end?label(end.id):null,end?`${mark(end.accessVlanId)} / ${mark(end.poeEnabled)}`:null]));
       }
     }
-    return workbook(fileName(g.project.code,'dau-noi',g.at)+'.xlsx',[this.info(g.project,g.at),
+    return await workbook(fileName(g.project.code,'dau-noi',g.at)+'.xlsx',[this.info(g.project,g.at),
       {name:'Cổng',columns:['Thiết bị','Mã cổng','Mô tả','Mặt','Connection ID/Trạng thái','VLAN','PoE'],rows:ports},
       {name:'Dây',columns:['Nhãn','Loại','Version','Đầu A','Mặt A','Đầu B','Mặt B'],rows:wires},
-      {name:'Tra cứu',columns:['Thiết bị nguồn','Cổng nguồn','Các đoạn dây','Độ đầy đủ','Panel/port','Rack qua đường','Switch/port','VLAN / PoE'],rows:traces}], this.limits);
+      {name:'Tra cứu',columns:['Thiết bị nguồn','Cổng nguồn','Các đoạn dây','Độ đầy đủ','Panel/port','Rack qua đường','Switch/port','VLAN / PoE'],rows:traces}], this.limits, signal);
+    } finally { release(); }
   }
 }

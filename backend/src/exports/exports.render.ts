@@ -1,4 +1,5 @@
 import { HttpException, PayloadTooLargeException, ServiceUnavailableException } from '@nestjs/common';
+import { fork } from 'node:child_process';
 import { createWriteStream } from 'node:fs';
 import { mkdtemp, realpath, rm, stat } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -6,18 +7,20 @@ import { isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { Transform } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 import { setImmediate } from 'node:timers/promises';
-import ExcelJS = require('exceljs');
 import PDFDocument = require('pdfkit');
 
 export const MAX_BYTES = 20 * 1024 * 1024;
 export const MAX_ROWS = 10000;
 export const MAX_PAGES = 200;
+export const MAX_INPUT_BYTES = 8 * 1024 * 1024;
+export const MAX_CELL_LENGTH = 32767;
+export const XLSX_TIMEOUT_MS = 60000;
 export const EXPORT_LIMITS = Symbol('EXPORT_LIMITS');
-export interface ExportLimits { maxBytes: number; maxRows: number; maxPages: number }
+export interface ExportLimits { maxBytes: number; maxRows: number; maxPages: number; maxInputBytes: number; xlsxTimeoutMs: number }
 // Tests may lower limits through DI/function arguments; no HTTP/env override.
 export function exportLimits(options: Partial<ExportLimits> = {}): ExportLimits {
-  const limits = { maxBytes: MAX_BYTES, maxRows: MAX_ROWS, maxPages: MAX_PAGES, ...options };
-  for (const [key, maximum] of Object.entries({ maxBytes: MAX_BYTES, maxRows: MAX_ROWS, maxPages: MAX_PAGES })) {
+  const limits = { maxBytes: MAX_BYTES, maxRows: MAX_ROWS, maxPages: MAX_PAGES, maxInputBytes: MAX_INPUT_BYTES, xlsxTimeoutMs: XLSX_TIMEOUT_MS, ...options };
+  for (const [key, maximum] of Object.entries({ maxBytes: MAX_BYTES, maxRows: MAX_ROWS, maxPages: MAX_PAGES, maxInputBytes: MAX_INPUT_BYTES, xlsxTimeoutMs: XLSX_TIMEOUT_MS })) {
     const value = limits[key as keyof ExportLimits];
     if (!Number.isSafeInteger(value) || value < 1 || value > maximum) throw new Error('Invalid export limit');
   }
@@ -32,7 +35,25 @@ export class RowBudget {
       throw new PayloadTooLargeException('Workbook exceeds ' + this.maximum + ' total rows');
   }
 }
+export class InputBudget {
+  private used = 0;
+  constructor(private readonly maximum: number) {}
+  add(value: string | number | null): void {
+    if (value === null) return;
+    const string = safeCell(value);
+    if (string.length > MAX_CELL_LENGTH) throw new PayloadTooLargeException('XLSX cell exceeds 32767 UTF-16 code units');
+    this.used += Buffer.byteLength(string, 'utf8');
+    if (this.used > this.maximum) throw new PayloadTooLargeException('Workbook input exceeds byte limit');
+  }
+  sheet(sheet: Sheet): void {
+    this.add(sheet.name);
+    for (const column of sheet.columns) this.add(column);
+    for (const row of sheet.rows) this.row(row);
+  }
+  row(row: (string | number | null)[]): void { for (const cell of row) this.add(cell); }
+}
 export const XLSX_MIME = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+export interface XlsxWorkerHooks { path?: string; onStart?: (pid: number) => void; onPeakRss?: (bytes: number) => void }
 // Noto Sans ccmp can emit a combining glyph with no Unicode code point.
 // PDFKit then writes an empty ToUnicode entry, corrupting extracted text.
 // PDFKit accepts the fontkit feature map at runtime; @types/pdfkit lists only enabled tag arrays.
@@ -80,38 +101,60 @@ function limiter(maximum: number) {
   } });
 }
 
-export async function workbook(name: string, sheets: Sheet[], options: Partial<ExportLimits> = {}): Promise<PreparedExport> {
+export async function workbook(name: string, sheets: Sheet[], options: Partial<ExportLimits> = {}, signal?: AbortSignal,
+  hooks: XlsxWorkerHooks = {}): Promise<PreparedExport> {
   const limits = exportLimits(options), preflight = new RowBudget(limits.maxRows);
   preflight.add(sheets.reduce((total, sheet) => total + 1 + sheet.rows.length, 0));
+  const input = new InputBudget(limits.maxInputBytes);
+  for (const sheet of sheets) input.sheet(sheet);
   return temporary(name, XLSX_MIME, limits, async path => {
-    const output = createWriteStream(path, { flags: 'wx', mode: 0o600 }), limited = limiter(limits.maxBytes);
-    let failure: unknown, rejectFailure!: (error: unknown) => void;
-    const failed = new Promise<never>((_, reject) => { rejectFailure = reject; });
-    void failed.catch(() => undefined);
-    const drained = pipeline(limited, output).catch(error => { failure = error; rejectFailure(error); });
-    const book = new ExcelJS.stream.xlsx.WorkbookWriter({ stream: limited, useStyles: true, useSharedStrings: false });
-    const budget = new RowBudget(limits.maxRows);
+    if (signal?.aborted) throw new ServiceUnavailableException('Export request canceled');
+    // The library materializes OOXML before ZIP creation. Isolate that work from Nest.
+    // V8 heap is not a process RSS limit; timeout/output/input budgets are independent.
+    const worker = fork(hooks.path ?? join(__dirname, 'xlsx.worker.js'), [], {
+      execArgv: ['--max-old-space-size=256'],
+      stdio: ['ignore', 'pipe', 'ignore', 'ipc'],
+      env: { NODE_ENV: 'production' },
+    });
+    if (worker.pid) hooks.onStart?.(worker.pid);
+    worker.on('message', message => {
+      if (message && typeof message === 'object' && 'peakRssBytes' in message && typeof message.peakRssBytes === 'number')
+        hooks.onPeakRss?.(message.peakRssBytes);
+    });
+    const output = createWriteStream(path, { flags: 'wx', mode: 0o600 });
+    const stream = worker.stdout;
+    if (!stream) throw new ServiceUnavailableException('XLSX worker stream unavailable');
+    let stopped = false;
+    const stop = () => { if (!stopped) { stopped = true; worker.kill(); } };
+    const onAbort = () => stop();
+    signal?.addEventListener('abort', onAbort, { once: true });
+    if (signal?.aborted) stop();
+    let timedOut = false;
+    const timer = setTimeout(() => { timedOut = true; stop(); }, limits.xlsxTimeoutMs);
+    let workerError: Error | undefined;
+    const exit = new Promise<void>((resolveExit, rejectExit) => {
+      worker.once('error', error => { workerError = error; });
+      // `close` follows process exit and stdio closure; do not release the service slot on an early `error` event.
+      worker.once('close', code => code === 0 && !workerError
+        ? resolveExit() : rejectExit(new ServiceUnavailableException('XLSX worker failed')));
+    });
+    const drained = pipeline(stream, limiter(limits.maxBytes), output);
+    // Attach handlers before sending; a worker can fail while IPC is being serialized.
+    void exit.catch(() => undefined); void drained.catch(() => undefined);
     try {
-      for (const sheet of sheets) {
-        budget.add();
-        const page = book.addWorksheet(sheet.name);
-        page.columns = sheet.columns.map(header => ({ header, key: header, width: 24 }));
-        page.getRow(1).font = { bold: true }; page.getRow(1).commit();
-        let count = 0;
-        for (const row of sheet.rows) {
-          budget.add();
-          if (failure) throw failure;
-          page.addRow(row.map(safeCell)).commit();
-          if (++count % 32 === 0) await Promise.race([setImmediate(), failed]);
-        }
-        page.commit();
-      }
-      await Promise.race([book.commit(), failed]); await drained;
-      if (failure) throw failure;
+      worker.send(sheets, error => { if (error) stop(); });
+      await Promise.all([drained, exit]);
+      if (timedOut || signal?.aborted) throw new ServiceUnavailableException(timedOut ? 'XLSX worker timed out' : 'Export request canceled');
     } catch (error) {
-      (book as unknown as { zip: { abort(): void } }).zip.abort();
-      limited.destroy(); output.destroy(); await drained;
-      throw failure ?? error;
+      stop(); stream.destroy(); output.destroy();
+      await Promise.allSettled([drained, exit]);
+      if (error instanceof PayloadTooLargeException) throw error;
+      if (timedOut) throw new ServiceUnavailableException('XLSX worker timed out');
+      if (signal?.aborted) throw new ServiceUnavailableException('Export request canceled');
+      throw new ServiceUnavailableException('Cannot create XLSX export');
+    } finally {
+      clearTimeout(timer);
+      signal?.removeEventListener('abort', onAbort);
     }
   });
 }

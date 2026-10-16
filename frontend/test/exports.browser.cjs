@@ -6,7 +6,7 @@ const path = require('node:path');
 const os = require('node:os');
 const { execFileSync } = require('node:child_process');
 const dotenv = require('dotenv');
-const ExcelJS = require('exceljs');
+const readWorkbook = require('../../backend/test/read-xlsx.cjs');
 const { chromium } = require(process.env.PLAYWRIGHT_MODULE || 'playwright');
 
 const local = dotenv.parse(require('node:fs').readFileSync(path.resolve(__dirname, '../../backend/.env')));
@@ -95,7 +95,7 @@ async function run() {
     await select(deviceProject);
     await page.locator('.overview-links').getByRole('button', { name: /Thiết bị/ }).click();
     const deviceFile = await download('Xuất Excel thiết bị');
-    const deviceBook = new ExcelJS.Workbook(); await deviceBook.xlsx.readFile(deviceFile);
+    const deviceBook = await readWorkbook(deviceFile);
     assert.deepEqual(deviceBook.worksheets.map(s => s.name), ['Thông tin', 'Thiết bị', 'Tủ']);
     assert.match(String(deviceBook.getWorksheet('Thông tin').getRow(2).getCell(2).value), new RegExp(deviceProject.code));
     if (existingDevices.length) assert.ok(existingDevices.some(d =>
@@ -103,7 +103,7 @@ async function run() {
     await page.getByRole('button', { name: 'Về tổng quan' }).click();
     await page.locator('.overview-links').getByRole('button', { name: /Đấu nối/ }).click();
     const connectionFile = await download('Xuất Excel đấu nối');
-    const connectionBook = new ExcelJS.Workbook(); await connectionBook.xlsx.readFile(connectionFile);
+    const connectionBook = await readWorkbook(connectionFile);
     assert.deepEqual(connectionBook.worksheets.map(s => s.name), ['Thông tin', 'Cổng', 'Dây', 'Tra cứu']);
     assert.match(String(connectionBook.getWorksheet('Thông tin').getRow(2).getCell(2).value), new RegExp(deviceProject.code));
     if (existingPorts.length) assert.ok(connectionBook.getWorksheet('Cổng').getColumn(2).values.includes(existingPorts[0].code),
