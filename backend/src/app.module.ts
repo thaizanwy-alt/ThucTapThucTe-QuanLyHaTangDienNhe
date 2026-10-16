@@ -12,6 +12,7 @@ import { RacksModule } from './devices/racks.module';
 import { InspectionsModule } from './inspections/inspections.module';
 import { EvidenceModule } from './evidence/evidence.module';
 import { AcceptancesModule } from './acceptances/acceptances.module';
+import { ExportsModule } from './exports/exports.module';
 
 @Module({
   imports: [
@@ -41,6 +42,7 @@ import { AcceptancesModule } from './acceptances/acceptances.module';
     InspectionsModule,
     EvidenceModule,
     AcceptancesModule,
+    ExportsModule,
   ],
   controllers: [HealthController],
 })
