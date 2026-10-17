@@ -229,7 +229,7 @@ test('Acceptance PostgreSQL/HTTP contract', { timeout: 180000 }, async t => {
       const { AppModule } = require('../dist/app.module');
       app = await NestFactory.create(AppModule, { logger: false }); app.useGlobalPipes(new ValidationPipe({ whitelist: true, transform: true })); await app.listen(0, '127.0.0.1');
       const base = await app.getUrl(), jwt = app.get(JwtService);
-      const auth = u => ({ Authorization: 'Bearer ' + jwt.sign({ sub: u.id }), 'Content-Type': 'application/json' });
+      const auth = u => ({ Authorization: 'Bearer ' + jwt.sign({ sub: u.id, authVersion: u.authVersion }), 'Content-Type': 'application/json' });
       const send = (method, url, user, body) => fetch(base + url, { method, headers: user ? auth(user) : {}, ...(body === undefined ? {} : { body: JSON.stringify(body) }) });
       const prefix = `/projects/${project.id}/acceptances`, url = prefix + '/' + confirmed.id;
       assert.equal((await send('GET', '/health')).status, 200); assert.equal((await (await send('GET', '/health')).json()).database, 'connected');
@@ -301,11 +301,16 @@ test('Acceptance PostgreSQL/HTTP contract', { timeout: 180000 }, async t => {
     await t.test('isolated migration down/up preserves every older business row and disk file', async () => {
       const tables = (await db.query("SELECT tablename FROM pg_tables WHERE schemaname='public' AND tablename NOT IN ('migrations','project_acceptances','acceptance_inspections','acceptance_evidence','acceptance_snapshots') ORDER BY tablename")).map(r => r.tablename);
       const before = {};
-      for (const table of tables) before[table] = await db.query(`SELECT * FROM "${table}" ORDER BY to_jsonb("${table}")::text`);
+      for (const table of tables) before[table] = await db.query(table === 'users'
+        ? 'SELECT id,email,role,is_active FROM users ORDER BY id'
+        : `SELECT * FROM "${table}" ORDER BY to_jsonb("${table}")::text`);
       const files = (await fs.readdir(path.join(root, 'files'))).sort();
+      await db.undoLastMigration(); // Remove the later User security migration before testing acceptance down.
       assert.equal((await db.query('SELECT name FROM migrations ORDER BY id DESC LIMIT 1'))[0].name, 'CreateProjectAcceptances1802000000000');
       await db.undoLastMigration(); assert.equal((await db.query("SELECT to_regclass('project_acceptances') name"))[0].name, null);
-      for (const table of tables) assert.deepEqual(await db.query(`SELECT * FROM "${table}" ORDER BY to_jsonb("${table}")::text`), before[table]);
+      for (const table of tables) assert.deepEqual(await db.query(table === 'users'
+        ? 'SELECT id,email,role,is_active FROM users ORDER BY id'
+        : `SELECT * FROM "${table}" ORDER BY to_jsonb("${table}")::text`), before[table]);
       assert.deepEqual((await fs.readdir(path.join(root, 'files'))).sort(), files); await db.runMigrations(); assert.equal(await db.showMigrations(), false);
     });
   } finally {

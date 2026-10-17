@@ -336,7 +336,7 @@ test('Checklist/Issue PostgreSQL and HTTP contract', { timeout: 180000 }, async 
       assert.equal(app.get(DataSource).options.database, name);
       const base = 'http://127.0.0.1:' + app.getHttpServer().address().port;
       const headers = {};
-      for (const u of [manager, tech, otherTech, inactive]) headers[u.id] = { Authorization: 'Bearer ' + await app.get(JwtService).signAsync({ sub: u.id }) };
+      for (const u of [manager, tech, otherTech, inactive]) headers[u.id] = { Authorization: 'Bearer ' + await app.get(JwtService).signAsync({ sub: u.id, authVersion: u.authVersion }) };
       const request = async (method, path, body, status, u = manager) => {
         const res = await fetch(base + path, { method, headers: { ...(u ? headers[u.id] : {}), 'Content-Type': 'application/json' }, ...(body === undefined ? {} : { body: JSON.stringify(body) }) });
         assert.equal(res.status, status, `${method} ${path}`);
@@ -387,7 +387,10 @@ test('Checklist/Issue PostgreSQL and HTTP contract', { timeout: 180000 }, async 
 
     await t.test('isolated migration down/up removes only checklist schema; existing data preserved', async () => {
       const before = {};
-      for (const table of ['users', 'projects', 'project_areas', 'project_systems', 'project_devices', 'project_tasks']) before[table] = await db.query(`SELECT * FROM ${table} ORDER BY id`);
+      for (const table of ['users', 'projects', 'project_areas', 'project_systems', 'project_devices', 'project_tasks']) before[table] = await db.query(table === 'users'
+        ? 'SELECT id,email,role,is_active FROM users ORDER BY id'
+        : `SELECT * FROM ${table} ORDER BY id`);
+      await db.undoLastMigration(); // Remove the later User security migration before the checklist migration sequence.
       assert.equal((await db.query('SELECT name FROM migrations ORDER BY id DESC LIMIT 1'))[0].name, 'CreateProjectAcceptances1802000000000');
       await db.undoLastMigration();
       assert.equal((await db.query('SELECT name FROM migrations ORDER BY id DESC LIMIT 1'))[0].name, 'CreateEvidenceAttachments1801000000000');
@@ -395,7 +398,9 @@ test('Checklist/Issue PostgreSQL and HTTP contract', { timeout: 180000 }, async 
       assert.equal((await db.query('SELECT name FROM migrations ORDER BY id DESC LIMIT 1'))[0].name, 'CreateInspections1800000000000');
       await db.undoLastMigration();
       assert.equal((await db.query("SELECT to_regclass('inspection_items') AS name"))[0].name, null);
-      for (const [table, rows] of Object.entries(before)) assert.deepEqual(await db.query(`SELECT * FROM ${table} ORDER BY id`), rows);
+      for (const [table, rows] of Object.entries(before)) assert.deepEqual(await db.query(table === 'users'
+        ? 'SELECT id,email,role,is_active FROM users ORDER BY id'
+        : `SELECT * FROM ${table} ORDER BY id`), rows);
       await db.runMigrations(); assert.equal(await db.showMigrations(), false);
     });
   } finally {

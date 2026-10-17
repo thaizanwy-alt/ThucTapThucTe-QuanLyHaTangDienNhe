@@ -18,4 +18,13 @@ export class User {
 
   @Column({ name: 'is_active', type: 'boolean', default: true })
   isActive!: boolean;
+
+  @Column({ name: 'must_change_password', type: 'boolean', default: false })
+  mustChangePassword!: boolean;
+
+  @Column({ name: 'auth_version', type: 'integer', default: 0 })
+  authVersion!: number;
+
+  @Column({ type: 'integer', default: 1 })
+  version!: number;
 }

@@ -5,8 +5,8 @@ import { UserRole } from '../users/user-role.enum';
 
 function requiredPassword(key: string): string {
   const value = process.env[key];
-  if (!value || value.length < 12) {
-    throw new Error(`${key} must have at least 12 characters`);
+  if (!value || [...value].length < 12 || Buffer.byteLength(value, 'utf8') > 72 || value.includes('\0')) {
+    throw new Error(`${key} must have at least 12 characters and at most 72 UTF-8 bytes`);
   }
   return value;
 }
@@ -44,10 +44,15 @@ async function main(): Promise<void> {
           !existing.isActive ||
           !(await compare(account.password, existing.passwordHash))
         ) {
+          if (existing.authVersion >= 2147483647 || existing.version >= 2147483647) {
+            throw new Error(`Cannot safely update ${account.role}: account version exhausted`);
+          }
           await users.update(existing.id, {
             role: account.role,
             isActive: true,
             passwordHash: await hash(account.password, 12),
+            authVersion: existing.authVersion + 1,
+            version: existing.version + 1,
           });
           console.log(`${account.role}: updated`);
         } else {

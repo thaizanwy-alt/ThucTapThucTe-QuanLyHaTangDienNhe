@@ -198,7 +198,7 @@ test('Network profile and switch VLAN/PoE: PostgreSQL constraints, trace, HTTP, 
         const headers = {};
         for (const role of ['MANAGER', 'TECHNICIAN']) {
           const user = await db.getRepository(User).findOneBy({ role });
-          headers[role] = { Authorization: 'Bearer ' + await app.get(JwtService).signAsync({ sub: user.id }) };
+          headers[role] = { Authorization: 'Bearer ' + await app.get(JwtService).signAsync({ sub: user.id, authVersion: user.authVersion }) };
         }
         const request = async (method, path, body, status, role = 'MANAGER') => {
           const response = await fetch(base + path, { method, headers: { ...(headers[role] || {}), 'Content-Type': 'application/json' },
@@ -254,6 +254,7 @@ test('Network profile and switch VLAN/PoE: PostgreSQL constraints, trace, HTTP, 
 
       await t.test('isolated down/up touches only new profile schema and port columns', async () => {
         const before = (await db.query('SELECT count(*)::int AS count FROM project_devices'))[0].count;
+        await db.undoLastMigration(); // Remove the later User security migration before testing historical down/up.
         assert.equal((await db.query('SELECT name FROM migrations ORDER BY id DESC LIMIT 1'))[0].name, 'CreateProjectAcceptances1802000000000');
         await db.undoLastMigration();
         assert.equal((await db.query('SELECT name FROM migrations ORDER BY id DESC LIMIT 1'))[0].name, 'CreateEvidenceAttachments1801000000000');

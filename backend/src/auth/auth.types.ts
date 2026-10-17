@@ -5,8 +5,11 @@ export interface AuthenticatedUser {
   email: string;
   role: UserRole;
   isActive: boolean;
+  mustChangePassword: boolean;
+  version: number;
 }
 
 export interface AccessTokenPayload {
   sub: string;
+  authVersion: number;
 }

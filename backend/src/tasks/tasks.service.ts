@@ -1,6 +1,6 @@
 import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { EntityManager, Repository } from 'typeorm';
 import { AuthenticatedUser } from '../auth/auth.types';
 import { ProjectArea } from '../projects/project-area.entity';
 import { ProjectSystem } from '../projects/project-system.entity';
@@ -34,7 +34,7 @@ export class TasksService {
   ) {}
 
   async listTasks(projectId: string, user: AuthenticatedUser): Promise<ProjectTask[]> {
-    await this.requireProject(projectId);
+    if (!await this.projects.findOneBy({ id: projectId })) throw new NotFoundException('Project not found');
     const where = user.role === UserRole.MANAGER
       ? { projectId }
       : { projectId, assigneeId: user.id };
@@ -52,27 +52,20 @@ export class TasksService {
 
   async createTask(projectId: string, dto: CreateProjectTaskDto, user: AuthenticatedUser): Promise<ProjectTask> {
     requireRole(user, UserRole.MANAGER);
-    await this.requireProject(projectId);
-    await this.requireSystem(projectId, dto.systemId);
-    if (dto.areaId) await this.requireArea(projectId, dto.areaId);
-    await this.requireActiveTechnician(dto.assigneeId);
-    const task = this.tasks.create({
-      projectId,
-      systemId: dto.systemId,
-      areaId: dto.areaId ?? null,
-      assigneeId: dto.assigneeId,
-      code: dto.code.trim().toUpperCase(),
-      title: dto.title.trim(),
-      description: dto.description ?? null,
-      status: TaskStatus.ASSIGNED,
-      completionNote: null,
-      returnReason: null,
-      submittedAt: null,
-      reviewedById: null,
-      reviewedAt: null,
-    });
     try {
-      return await this.tasks.save(task);
+      return await this.tasks.manager.transaction(async m => {
+        await this.requireActiveTechnician(m, dto.assigneeId);
+        await this.requireProject(m, projectId);
+        await this.requireSystem(m, projectId, dto.systemId);
+        if (dto.areaId) await this.requireArea(m, projectId, dto.areaId);
+        const task = m.create(ProjectTask, {
+          projectId, systemId: dto.systemId, areaId: dto.areaId ?? null, assigneeId: dto.assigneeId,
+          code: dto.code.trim().toUpperCase(), title: dto.title.trim(), description: dto.description ?? null,
+          status: TaskStatus.ASSIGNED, completionNote: null, returnReason: null, submittedAt: null,
+          reviewedById: null, reviewedAt: null,
+        });
+        return m.save(task);
+      });
     } catch (error) {
       this.rethrowWriteError(error);
     }
@@ -83,27 +76,31 @@ export class TasksService {
     if (!editableFields.some((field) => dto[field] !== undefined)) {
       throw new BadRequestException('At least one field is required');
     }
-    const current = await this.getTask(projectId, taskId, user);
-    if (current.status !== TaskStatus.ASSIGNED && current.status !== TaskStatus.RETURNED) {
-      throw new ConflictException('Task cannot be edited in its current status');
-    }
-    if (dto.systemId !== undefined) await this.requireSystem(projectId, dto.systemId);
-    if (dto.areaId) await this.requireArea(projectId, dto.areaId);
-    if (dto.assigneeId !== undefined) await this.requireActiveTechnician(dto.assigneeId);
-    const changes: Partial<ProjectTask> = {};
-    if (dto.code !== undefined) changes.code = dto.code.trim().toUpperCase();
-    if (dto.title !== undefined) changes.title = dto.title.trim();
-    if (dto.systemId !== undefined) changes.systemId = dto.systemId;
-    if (dto.areaId !== undefined) changes.areaId = dto.areaId;
-    if (dto.assigneeId !== undefined) changes.assigneeId = dto.assigneeId;
-    if (dto.description !== undefined) changes.description = dto.description;
     try {
-      const result = await this.tasks.update({ id: taskId, projectId, status: current.status }, changes);
-      if (result.affected !== 1) throw new ConflictException('Task changed; reload and retry');
+      return await this.tasks.manager.transaction(async m => {
+        // Global assignment lock order: User first, then Task. This serializes assignment with account deactivation.
+        if (dto.assigneeId !== undefined) await this.requireActiveTechnician(m, dto.assigneeId);
+        const current = await m.findOne(ProjectTask, { where: { id: taskId, projectId }, lock: { mode: 'pessimistic_write' } });
+        if (!current) throw new NotFoundException('Task not found');
+        if (current.status !== TaskStatus.ASSIGNED && current.status !== TaskStatus.RETURNED) {
+          throw new ConflictException('Task cannot be edited in its current status');
+        }
+        if (dto.systemId !== undefined) await this.requireSystem(m, projectId, dto.systemId);
+        if (dto.areaId) await this.requireArea(m, projectId, dto.areaId);
+        const changes: Partial<ProjectTask> = {};
+        if (dto.code !== undefined) changes.code = dto.code.trim().toUpperCase();
+        if (dto.title !== undefined) changes.title = dto.title.trim();
+        if (dto.systemId !== undefined) changes.systemId = dto.systemId;
+        if (dto.areaId !== undefined) changes.areaId = dto.areaId;
+        if (dto.assigneeId !== undefined) changes.assigneeId = dto.assigneeId;
+        if (dto.description !== undefined) changes.description = dto.description;
+        const result = await m.update(ProjectTask, { id: taskId, projectId, status: current.status }, changes);
+        if (result.affected !== 1) throw new ConflictException('Task changed; reload and retry');
+        return m.findOneByOrFail(ProjectTask, { id: taskId, projectId });
+      });
     } catch (error) {
       this.rethrowWriteError(error);
     }
-    return this.getTask(projectId, taskId, user);
   }
 
   async startTask(projectId: string, taskId: string, user: AuthenticatedUser): Promise<ProjectTask> {
@@ -173,20 +170,20 @@ export class TasksService {
     return this.getTask(projectId, taskId, user);
   }
 
-  private async requireProject(projectId: string): Promise<void> {
-    if (!await this.projects.findOneBy({ id: projectId })) throw new NotFoundException('Project not found');
+  private async requireProject(m: EntityManager, projectId: string): Promise<void> {
+    if (!await m.findOneBy(Project, { id: projectId })) throw new NotFoundException('Project not found');
   }
 
-  private async requireSystem(projectId: string, systemId: string): Promise<void> {
-    if (!await this.systems.findOneBy({ id: systemId, projectId })) throw new NotFoundException('System not found');
+  private async requireSystem(m: EntityManager, projectId: string, systemId: string): Promise<void> {
+    if (!await m.findOneBy(ProjectSystem, { id: systemId, projectId })) throw new NotFoundException('System not found');
   }
 
-  private async requireArea(projectId: string, areaId: string): Promise<void> {
-    if (!await this.areas.findOneBy({ id: areaId, projectId })) throw new NotFoundException('Area not found');
+  private async requireArea(m: EntityManager, projectId: string, areaId: string): Promise<void> {
+    if (!await m.findOneBy(ProjectArea, { id: areaId, projectId })) throw new NotFoundException('Area not found');
   }
 
-  private async requireActiveTechnician(assigneeId: string): Promise<void> {
-    const assignee = await this.users.findOneBy({ id: assigneeId });
+  private async requireActiveTechnician(m: EntityManager, assigneeId: string): Promise<void> {
+    const assignee = await m.findOne(User, { where: { id: assigneeId }, lock: { mode: 'pessimistic_write' } });
     if (!assignee) throw new NotFoundException('Technician not found');
     if (assignee.role !== UserRole.TECHNICIAN || !assignee.isActive) {
       throw new ConflictException('Assignee must be an active technician');

@@ -229,7 +229,7 @@ test('Rack layout: migration, legacy data, roles, capacity, concurrency, HTTP gu
       const headers = {};
       for (const role of ['MANAGER', 'TECHNICIAN']) {
         const user = await db.getRepository(User).findOneBy({ role });
-        headers[role] = { Authorization: 'Bearer ' + await app.get(JwtService).signAsync({ sub: user.id }) };
+        headers[role] = { Authorization: 'Bearer ' + await app.get(JwtService).signAsync({ sub: user.id, authVersion: user.authVersion }) };
       }
       const request = async (method, route, body, status, role = 'MANAGER') => {
         const response = await fetch(base + route, { method, headers: { ...(headers[role] || {}), 'Content-Type': 'application/json' },
@@ -255,6 +255,7 @@ test('Rack layout: migration, legacy data, roles, capacity, concurrency, HTTP gu
     });
 
     await t.test('down refuses to discard new enum Device data', async () => {
+      await db.undoLastMigration(); // Remove the later User security migration before testing rack migration down.
       assert.equal((await db.query('SELECT name FROM migrations ORDER BY id DESC LIMIT 1'))[0].name, 'CreateProjectAcceptances1802000000000');
       await db.undoLastMigration();
       assert.equal((await db.query('SELECT name FROM migrations ORDER BY id DESC LIMIT 1'))[0].name, 'CreateEvidenceAttachments1801000000000');

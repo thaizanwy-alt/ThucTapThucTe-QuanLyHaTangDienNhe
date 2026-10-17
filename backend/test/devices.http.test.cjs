@@ -11,8 +11,10 @@ const { UserRole } = require('../dist/users/user-role.enum.js');
 const { Project } = require('../dist/projects/project.entity.js');
 const { ProjectArea } = require('../dist/projects/project-area.entity.js');
 const { ProjectSystem } = require('../dist/projects/project-system.entity.js');
+const { withDisposableHttpDb } = require('./disposable-http-db.cjs');
 
 test('Nest starts with PostgreSQL; Device HTTP CRUD, roles, validation and concurrent placement work', async () => {
+  await withDisposableHttpDb('deviceshttp', async () => {
   const app = await NestFactory.create(AppModule, { logger: ['error'] });
   const fixtureProjectIds = [];
   try {
@@ -23,11 +25,11 @@ test('Nest starts with PostgreSQL; Device HTTP CRUD, roles, validation and concu
     const health = await fetch(`${base}/health`);
     assert.equal(health.status, 200);
     assert.deepEqual(await health.json(), { status: 'ok', database: 'connected' });
-    const manager = await database.getRepository(User).findOneBy({ role: UserRole.MANAGER, isActive: true });
-    const technician = await database.getRepository(User).findOneBy({ role: UserRole.TECHNICIAN, isActive: true });
-    assert.ok(manager && technician, 'Local DB requires active manager and technician');
+    const { randomBytes } = require('node:crypto');
+    const manager = await database.getRepository(User).save({ email: 'manager@devices-http.invalid', role: UserRole.MANAGER, isActive: true, passwordHash: randomBytes(32).toString('hex') });
+    const technician = await database.getRepository(User).save({ email: 'technician@devices-http.invalid', role: UserRole.TECHNICIAN, isActive: true, passwordHash: randomBytes(32).toString('hex') });
     const jwt = app.get(JwtService);
-    const auth = async user => ({ Authorization: `Bearer ${await jwt.signAsync({ sub: user.id })}` });
+    const auth = async user => ({ Authorization: `Bearer ${await jwt.signAsync({ sub: user.id, authVersion: user.authVersion })}` });
     const managerHeaders = await auth(manager);
     const technicianHeaders = await auth(technician);
     const suffix = randomUUID().toUpperCase();
@@ -121,17 +123,7 @@ test('Nest starts with PostgreSQL; Device HTTP CRUD, roles, validation and concu
     await result('DELETE', `${path}/${rack.id}`, undefined, 204);
     assert.deepEqual(await result('GET', path, undefined, 200), []);
   } finally {
-    // Only remove the UUID-scoped fixture projects created above; existing data is untouched.
-    if (fixtureProjectIds.length > 0) {
-      await app.get(DataSource).transaction(async entityManager => {
-        await entityManager.query('DELETE FROM project_device_systems WHERE project_id = ANY($1::uuid[])', [fixtureProjectIds]);
-        await entityManager.query('DELETE FROM project_devices WHERE project_id = ANY($1::uuid[]) AND rack_id IS NOT NULL', [fixtureProjectIds]);
-        await entityManager.query('DELETE FROM project_devices WHERE project_id = ANY($1::uuid[])', [fixtureProjectIds]);
-        await entityManager.query('DELETE FROM project_systems WHERE project_id = ANY($1::uuid[])', [fixtureProjectIds]);
-        await entityManager.query('DELETE FROM project_areas WHERE project_id = ANY($1::uuid[])', [fixtureProjectIds]);
-        await entityManager.query('DELETE FROM projects WHERE id = ANY($1::uuid[])', [fixtureProjectIds]);
-      });
-    }
     await app.close();
   }
+  });
 });

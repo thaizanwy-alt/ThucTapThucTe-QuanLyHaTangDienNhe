@@ -128,14 +128,28 @@ export class InspectionsService {
   }
 
   private async activeTechnician(m: EntityManager, id: string) {
-    const user = await m.findOne(User, { where: { id }, lock: { mode: 'pessimistic_read' } });
+    const user = await m.findOne(User, { where: { id }, lock: { mode: 'pessimistic_write' } });
     if (!user) throw new NotFoundException('Technician not found');
     if (user.role !== UserRole.TECHNICIAN || !user.isActive) throw new ConflictException('Assignee must be an active technician');
+  }
+
+  private async lockIssueAssignees(m: EntityManager, currentId: string, nextId: string) {
+    // Deactivation and reassignment serialize through User rows before the
+    // Inspection/Item/Issue locks. A stable order prevents user-user deadlocks.
+    for (const id of [...new Set([currentId, nextId])].sort((a, b) => a.toLowerCase().localeCompare(b.toLowerCase()))) {
+      const user = await m.findOne(User, { where: { id }, lock: { mode: 'pessimistic_write' } });
+      if (!user || user.role !== UserRole.TECHNICIAN) throw new NotFoundException('Technician not found');
+      if (id.toLowerCase() === nextId.toLowerCase() && !user.isActive) {
+        throw new ConflictException('Assignee must be an active technician');
+      }
+    }
   }
 
   async putResult(projectId: string, inspectionId: string, itemId: string, dto: PutInspectionResultDto, user: AuthenticatedUser) {
     role(user, UserRole.MANAGER);
     return this.write(async m => {
+      // Lock the prospective assignee before acquiring the shared Inspection/Item locks.
+      if (dto.result === Result.FAIL && dto.issue) await this.activeTechnician(m, dto.issue.assigneeId);
       const inspection = await this.inspection(m, projectId, inspectionId, true);
       const item = await m.findOne(InspectionItem, { where: { id: itemId, projectId, inspectionId }, lock: { mode: 'pessimistic_write' } });
       if (!item) throw new NotFoundException('Item not found');
@@ -149,7 +163,6 @@ export class InspectionsService {
       if (dto.result === Result.FAIL && !active) {
         if (!dto.issue) throw new BadRequestException('FAIL requires an issue');
         const description = requiredText(dto.issue.description, 'Description');
-        await this.activeTechnician(m, dto.issue.assigneeId);
         await m.save(RemediationIssue, m.create(RemediationIssue, {
           projectId, itemId: item.id, description, assigneeId: dto.issue.assigneeId, status: Status.OPEN,
           resolutionNote: null, resolvedAt: null, returnReason: null, reviewedById: null, reviewedAt: null, version: 1,
@@ -195,9 +208,17 @@ export class InspectionsService {
   }
 
   private async mutateIssue(projectId: string, issueId: string, expected: number, user: AuthenticatedUser,
-    work: (m: EntityManager, issue: RemediationIssue, item: InspectionItem) => Promise<void>) {
+    work: (m: EntityManager, issue: RemediationIssue, item: InspectionItem) => Promise<void>, lockAssigneeId?: string) {
     return this.write(async m => {
+      let assigneeBeforeLocks: string | undefined;
+      if (lockAssigneeId) {
+        assigneeBeforeLocks = (await this.visibleIssue(m, projectId, issueId, user)).assigneeId;
+        await this.lockIssueAssignees(m, assigneeBeforeLocks, lockAssigneeId);
+      }
       const initial = await this.visibleIssue(m, projectId, issueId, user);
+      if (assigneeBeforeLocks && initial.assigneeId.toLowerCase() !== assigneeBeforeLocks.toLowerCase()) {
+        throw new ConflictException('Issue assignee changed; reload and retry');
+      }
       const initialItem = await m.findOneByOrFail(InspectionItem, { projectId, id: initial.itemId });
       const inspection = await this.inspection(m, projectId, initialItem.inspectionId, true);
       // Re-read ownership/version after waiting for the shared inspection lock.
@@ -232,10 +253,10 @@ export class InspectionsService {
 
   assignIssue(projectId: string, issueId: string, dto: AssignIssueDto, user: AuthenticatedUser) {
     role(user, UserRole.MANAGER);
-    return this.mutateIssue(projectId, issueId, dto.expectedVersion, user, async (m, issue) => {
+    return this.mutateIssue(projectId, issueId, dto.expectedVersion, user, async (_m, issue) => {
       if (issue.status !== Status.OPEN) throw new ConflictException('Only OPEN issues can be reassigned');
-      await this.activeTechnician(m, dto.assigneeId); issue.assigneeId = dto.assigneeId;
-    });
+      issue.assigneeId = dto.assigneeId;
+    }, dto.assigneeId);
   }
 
   recheckIssue(projectId: string, issueId: string, dto: RecheckIssueDto, user: AuthenticatedUser) {

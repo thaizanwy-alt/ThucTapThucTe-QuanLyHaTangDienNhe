@@ -11,6 +11,11 @@ const { UsersController } = require('../dist/users/users.controller.js');
 const { TasksController } = require('../dist/tasks/tasks.controller.js');
 const { TasksService } = require('../dist/tasks/tasks.service.js');
 const { TaskStatus } = require('../dist/tasks/task-status.enum.js');
+const { ProjectTask } = require('../dist/tasks/project-task.entity.js');
+const { Project } = require('../dist/projects/project.entity.js');
+const { ProjectSystem } = require('../dist/projects/project-system.entity.js');
+const { ProjectArea } = require('../dist/projects/project-area.entity.js');
+const { User } = require('../dist/users/user.entity.js');
 const { CreateProjectTaskDto, UpdateProjectTaskDto, SubmitProjectTaskDto, ReturnProjectTaskDto } = require('../dist/tasks/dto/task.dto.js');
 
 class MemoryRepository {
@@ -19,7 +24,8 @@ class MemoryRepository {
   async save(value) {
     if (this.failSaveCode) { const code = this.failSaveCode; this.failSaveCode = undefined; throw { driverError: { code } }; }
     const row = { ...value, id: value.id ?? randomUUID(), createdAt: new Date(), updatedAt: new Date() };
-    this.rows.push(row);
+    const index = this.rows.findIndex(item => item.id === row.id);
+    if (index >= 0) this.rows[index] = row; else this.rows.push(row);
     return row;
   }
   async findOneBy(where) { return this.rows.find((row) => matches(row, where)) ?? null; }
@@ -55,6 +61,17 @@ function fixture() {
   const systems = new MemoryRepository([{ id: systemId, projectId }, { id: randomUUID(), projectId: otherProjectId }]);
   const areas = new MemoryRepository([{ id: areaId, projectId }, { id: randomUUID(), projectId: otherProjectId }]);
   const users = new MemoryRepository([manager, technician, otherTechnician].map((user) => ({ ...user })));
+  const repositories = new Map([[ProjectTask, tasks], [Project, projects], [ProjectSystem, systems], [ProjectArea, areas], [User, users]]);
+  const em = {
+    transaction: async work => work(em),
+    findOne: async (entity, options) => repositories.get(entity).findOneBy(options.where),
+    findOneBy: async (entity, where) => repositories.get(entity).findOneBy(where),
+    findOneByOrFail: async (entity, where) => { const value = await repositories.get(entity).findOneBy(where); if (!value) throw new Error('missing'); return value; },
+    create: (entity, value) => repositories.get(entity).create(value),
+    save: value => tasks.save(value),
+    update: (entity, where, value) => repositories.get(entity).update(where, value),
+  };
+  tasks.manager = em;
   return { tasks, projects, systems, areas, users, service: new TasksService(tasks, projects, systems, areas, users) };
 }
 

@@ -13,6 +13,16 @@ Yêu cầu: Node.js 20.19+ và PostgreSQL đang chạy.
 
 `POST /auth/login` nhận JSON `{"email":"manager.demo@example.local","password":"..."}` và trả `accessToken`. Gửi `Authorization: Bearer <accessToken>` tới `GET /auth/me`. Tài khoản còn lại có email `technician.demo@example.local`; có thể đổi hai email qua biến môi trường. TypeORM giữ `synchronize: false`; bảng `users` chỉ tạo bởi migration.
 
+## Tài khoản kỹ thuật viên (backend)
+
+Chỉ MANAGER dùng `GET /users/technicians/manage` để xem danh sách quản lý, `POST /users/technicians` để tạo TECHNICIAN (email và mật khẩu tạm), `PATCH /users/technicians/:id/status` để kích hoạt/vô hiệu hóa và `POST /users/technicians/:id/password-reset` để đặt mật khẩu tạm mới. Các response chỉ có whitelist thông tin tài khoản; không trả password hash hoặc mật khẩu. `GET /users/technicians` hiện hữu vẫn chỉ trả `{id,email}` của kỹ thuật viên active để dùng khi giao việc.
+
+Mật khẩu mới/reset cần ít nhất 12 ký tự Unicode, tối đa 72 byte UTF-8 và không chứa NUL; hệ thống từ chối vượt giới hạn thay vì cắt theo giới hạn bcrypt. Tài khoản mới/reset phải đổi mật khẩu qua `POST /auth/change-password` với `currentPassword`, `newPassword` và `expectedVersion`; tới khi đổi, chỉ `/auth/me` và đổi mật khẩu được phép. MANAGER chuyển mật khẩu tạm cho người dùng ngoài hệ thống. Không gửi mật khẩu qua URL/log hoặc đặt trong frontend.
+
+Mỗi JWT được kiểm tra `authVersion` với User ở từng request. Đổi/reset mật khẩu hoặc đổi active state làm token cũ mất hiệu lực; JWT cũ thiếu claim này cần đăng nhập lại. Reset không kích hoạt tài khoản inactive. Vô hiệu hóa bị từ chối 409 khi còn Task chưa APPROVED hoặc Issue chưa CLOSED; API không tự giao lại công việc. Cập nhật trạng thái yêu cầu `expectedVersion`; gọi lại cùng trạng thái là no-op và không thu hồi token.
+
+Sau khi áp migration mới trên môi trường đích, chạy `npm run test:users:db -w backend` để kiểm tra tài khoản/auth và race trên PostgreSQL tạm; harness cần `CREATEDB` chỉ cho DB test riêng. Không chạy test DB trên cơ sở dữ liệu cần giữ dữ liệu nếu tài khoản PostgreSQL không có quyền tạo/xóa DB tạm.
+
 Các route cần phân quyền về sau dùng `@UseGuards(JwtAuthGuard, RolesGuard)` cùng `@Roles(UserRole.MANAGER)` hoặc `@Roles(UserRole.TECHNICIAN)`; import `AuthModule` vào module chứa route. Chạy `npm run test -w backend` để kiểm tra guard.
 
 Frontend mặc định gọi API tại `http://localhost:3000`; có thể đặt `VITE_API_URL` trong `frontend/.env.local` theo `frontend/.env.example` rồi khởi động lại Vite. Không đặt mật khẩu hoặc `JWT_SECRET` trong biến `VITE_*`. Phiên demo local dùng localStorage, kiểm tra `/auth/me` khi tải lại và xóa token khi đăng xuất, hết hạn hoặc nhận 401. API chưa có tên người dùng nên giao diện dùng email để nhận diện tài khoản.

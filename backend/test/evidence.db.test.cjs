@@ -262,7 +262,7 @@ test('Evidence PostgreSQL/HTTP contract', { timeout: 180000 }, async t => {
       app.useGlobalPipes(new ValidationPipe({whitelist:true,transform:true})); await app.listen(0,'127.0.0.1');
       assert.equal(app.get(DataSource).options.database,name); const base='http://127.0.0.1:'+app.getHttpServer().address().port;
       assert.deepEqual(await (await fetch(base+'/health')).json(),{status:'ok',database:'connected'});
-      const auth={}; for(const u of [manager,tech,other]) auth[u.id]={Authorization:'Bearer '+await app.get(JwtService).signAsync({sub:u.id})};
+      const auth={}; for(const u of [manager,tech,other]) auth[u.id]={Authorization:'Bearer '+await app.get(JwtService).signAsync({sub:u.id,authVersion:u.authVersion})};
       const q=await task(); const url=`/projects/${p.id}/tasks/${q.id}/evidence`;
       const send=async(user, key=randomUUID(), buffer=png, mime='image/png', filename='evidence.png', caption=' note ')=>{
         const form=new FormData(); form.append('file',new Blob([buffer],{type:mime}),filename); form.append('caption',caption);
@@ -334,13 +334,14 @@ test('Evidence PostgreSQL/HTTP contract', { timeout: 180000 }, async t => {
       await app.close();app=undefined;
     });
     await t.test('isolated down/up removes only evidence schema, preserves all business rows and disk',async()=>{
-      const before={};for(const table of ['users','projects','project_tasks','project_inspections','inspection_items','remediation_issues']) before[table]=await db.query(`SELECT * FROM ${table} ORDER BY id`);
+      const before={};for(const table of ['users','projects','project_tasks','project_inspections','inspection_items','remediation_issues']) before[table]=await db.query(table==='users'?'SELECT id,email,role,is_active FROM users ORDER BY id':`SELECT * FROM ${table} ORDER BY id`);
       const files=await fs.readdir(path.join(root,'files'));
+      await db.undoLastMigration(); // Remove the later User security migration before the evidence migration sequence.
       assert.equal((await db.query('SELECT name FROM migrations ORDER BY id DESC LIMIT 1'))[0].name,'CreateProjectAcceptances1802000000000');
       await db.undoLastMigration();
       assert.equal((await db.query('SELECT name FROM migrations ORDER BY id DESC LIMIT 1'))[0].name,'CreateEvidenceAttachments1801000000000');
       await db.undoLastMigration(); assert.equal((await db.query("SELECT to_regclass('evidence_attachments') name"))[0].name,null);
-      for(const [table,rows] of Object.entries(before)) assert.deepEqual(await db.query(`SELECT * FROM ${table} ORDER BY id`),rows);
+      for(const [table,rows] of Object.entries(before)) assert.deepEqual(await db.query(table==='users'?'SELECT id,email,role,is_active FROM users ORDER BY id':`SELECT * FROM ${table} ORDER BY id`),rows);
       assert.deepEqual(await fs.readdir(path.join(root,'files')),files);await db.runMigrations();assert.equal(await db.showMigrations(),false);
     });
   } finally {

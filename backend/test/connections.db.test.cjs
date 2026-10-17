@@ -340,7 +340,7 @@ test('Connections: real PostgreSQL constraints/concurrency/rollback, Nest HTTP a
       const headers = {};
       for (const role of ['MANAGER', 'TECHNICIAN']) {
         const user = await db.getRepository(User).findOneBy({ role });
-        headers[role] = { Authorization: 'Bearer ' + await app.get(JwtService).signAsync({ sub: user.id }) };
+        headers[role] = { Authorization: 'Bearer ' + await app.get(JwtService).signAsync({ sub: user.id, authVersion: user.authVersion }) };
       }
       const request = async (method, path, body, status, role = 'MANAGER') => {
         const response = await fetch(base + path, { method, headers: { ...(headers[role] || {}), 'Content-Type': 'application/json' },
@@ -395,6 +395,7 @@ test('Connections: real PostgreSQL constraints/concurrency/rollback, Nest HTTP a
       assert.deepEqual(invalid, []);
       const countOld = async () => (await db.query('SELECT (SELECT count(*)::int FROM users) AS users, (SELECT count(*)::int FROM projects) AS projects, (SELECT count(*)::int FROM project_devices) AS devices'))[0];
       const before = await countOld();
+      await db.undoLastMigration(); // Leave the User security migration intact only after the historical down/up sequence.
       assert.equal((await db.query('SELECT name FROM migrations ORDER BY id DESC LIMIT 1'))[0].name, 'CreateProjectAcceptances1802000000000');
       await db.undoLastMigration();
       assert.equal((await db.query('SELECT name FROM migrations ORDER BY id DESC LIMIT 1'))[0].name, 'CreateEvidenceAttachments1801000000000');

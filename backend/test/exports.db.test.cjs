@@ -264,6 +264,15 @@ test('handover exports: isolated PostgreSQL, HTTP, PDF and XLSX', { timeout: 180
     });
 
     await runCase('handover ZIP opens, manifest hashes exact bytes, includes soft-deleted pinned evidence and supports empty selection', async () => {
+      // This case owns its replacement/current-data/soft-delete fixture; it must
+      // also work when selected without running the preceding PDF regression.
+      await db.getRepository(Project).update(project.id, { name: 'Tên công trình đã đổi' });
+      if (!(await db.getRepository(ProjectAcceptance).findOneBy({ replacesId: acceptance.id, status: 'CONFIRMED' }))) {
+        await db.getRepository(ProjectAcceptance).save({ projectId: project.id, systemId: system.id,
+          code: 'AC-02', title: 'Thay thế', status: 'CONFIRMED', createdById: manager.id,
+          confirmedById: manager.id, confirmedAt: new Date(), replacesId: acceptance.id, replacementReason: 'Sửa sai' });
+      }
+      await db.getRepository(EvidenceAttachment).update(attachment.id, { deletedAt: new Date(), deleteReason: 'Soft deleted', deletedById: manager.id });
       const folder=await fs.mkdtemp(path.join(os.tmpdir(),'elv-handover-verify-'));
       const bundle=await service.handoverPackage(project.id,acceptance.id,manager);
       try {
@@ -594,7 +603,7 @@ test('handover exports: isolated PostgreSQL, HTTP, PDF and XLSX', { timeout: 180
       const { AppModule } = require('../dist/app.module');
       app = await NestFactory.create(AppModule, { logger: false }); await app.listen(0, '127.0.0.1');
       const base = await app.getUrl(), jwt = app.get(JwtService);
-      const get = (url, user) => fetch(base + url, { headers: user ? { Authorization: 'Bearer ' + jwt.sign({ sub: user.id }) } : {} });
+      const get = (url, user) => fetch(base + url, { headers: user ? { Authorization: 'Bearer ' + jwt.sign({ sub: user.id, authVersion: user.authVersion }) } : {} });
       const getAfterSlotRelease=async(url,user)=>{
         const until=Date.now()+5000; let response;
         do {
@@ -691,7 +700,7 @@ test('handover exports: isolated PostgreSQL, HTTP, PDF and XLSX', { timeout: 180
       try {
         const received = await new Promise((resolve, reject) => {
           const request = require('node:http').get(base + p + '/exports/devices.xlsx',
-            { headers: { Authorization: 'Bearer ' + jwt.sign({ sub: manager.id }) } }, response => {
+            { headers: { Authorization: 'Bearer ' + jwt.sign({ sub: manager.id, authVersion: manager.authVersion }) } }, response => {
               response.once('data', chunk => { response.destroy(); request.destroy(); resolve(chunk.length); });
               response.on('error', () => undefined);
             });
@@ -711,7 +720,7 @@ test('handover exports: isolated PostgreSQL, HTTP, PDF and XLSX', { timeout: 180
       try {
         const received=await new Promise((resolve,reject)=>{
           const request=require('node:http').get(base+`${p}/acceptances/${acceptance.id}/handover-package.zip`,
-            {headers:{Authorization:'Bearer '+jwt.sign({sub:manager.id})}},response=>{
+            {headers:{Authorization:'Bearer '+jwt.sign({sub:manager.id,authVersion:manager.authVersion})}},response=>{
               assert.match(response.headers['content-type'],/application\/zip/);
               response.once('data',chunk=>{response.destroy();request.destroy();resolve(chunk.length);});
               response.on('error',()=>undefined);
@@ -733,7 +742,7 @@ test('handover exports: isolated PostgreSQL, HTTP, PDF and XLSX', { timeout: 180
       try {
         const headers=new Promise((resolve,reject)=>{
           heldRequest=require('node:http').get(base+`${p}/acceptances/${acceptance.id}/handover-package.zip`,
-            {headers:{Authorization:'Bearer '+jwt.sign({sub:manager.id})}},response=>{response.pause();resolve(response);});
+            {headers:{Authorization:'Bearer '+jwt.sign({sub:manager.id,authVersion:manager.authVersion})}},response=>{response.pause();resolve(response);});
           heldRequest.on('error',reject);
         });
         await bounded(headers,5000,'held ZIP response headers');
@@ -757,7 +766,7 @@ test('handover exports: isolated PostgreSQL, HTTP, PDF and XLSX', { timeout: 180
       try {
         const closed=new Promise((resolve,reject)=>{
           timedRequest=require('node:http').get(base+`${p}/acceptances/${acceptance.id}/handover-package.zip`,
-            {headers:{Authorization:'Bearer '+jwt.sign({sub:manager.id})}},response=>{
+            {headers:{Authorization:'Bearer '+jwt.sign({sub:manager.id,authVersion:manager.authVersion})}},response=>{
               timedResponse=response; response.on('data',()=>{}); response.once('aborted',resolve); response.once('close',resolve);
             });
           timedRequest.on('error',reject);
@@ -788,7 +797,7 @@ test('handover exports: isolated PostgreSQL, HTTP, PDF and XLSX', { timeout: 180
         { path: path.join(__dirname, 'fixtures', 'xlsx-worker-fault.cjs'), onStart: pid => { workerPid = pid; started(); } });
       try {
         const request = require('node:http').get(base + p + '/exports/devices.xlsx',
-          { headers: { Authorization: 'Bearer ' + jwt.sign({ sub: manager.id }) } });
+          { headers: { Authorization: 'Bearer ' + jwt.sign({ sub: manager.id, authVersion: manager.authVersion }) } });
         request.on('error', () => undefined);
         await bounded(workerStarted, 5000);
         request.destroy();
