@@ -1,4 +1,4 @@
-import { ApiError, baseUrl } from './client';
+import { ApiError, baseUrl, reportSessionFailure, sessionIdFor } from './client';
 
 export type ExportKind = 'acceptance' | 'devices' | 'connections' | 'handover-package';
 export type ExportFile = { blob: Blob; name: string };
@@ -39,6 +39,7 @@ export function exportFilename(header: string | null, fallback: string, extensio
 export async function requestExport(token: string, projectId: string, kind: ExportKind,
   signal: AbortSignal, acceptanceId?: string): Promise<ExportFile> {
   const path = exportPath(projectId, kind, acceptanceId);
+  const requestSessionId = sessionIdFor(token);
   let response: Response;
   try {
     response = await fetch(baseUrl + path, { headers: { Authorization: `Bearer ${token}` }, signal });
@@ -47,6 +48,7 @@ export async function requestExport(token: string, projectId: string, kind: Expo
     throw new ApiError(0, 'Không kết nối được máy chủ để xuất file. Hãy thử lại.');
   }
   if (!response.ok) {
+    if (response.status === 401) reportSessionFailure(token, requestSessionId);
     // Error responses are JSON even though success responses are binary.
     const body: unknown = await response.json().catch(() => null);
     const message = body && typeof body === 'object' && 'message' in body ? (body as { message: unknown }).message : null;

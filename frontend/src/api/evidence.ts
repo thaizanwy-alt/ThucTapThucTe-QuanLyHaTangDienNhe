@@ -1,4 +1,4 @@
-import { ApiError, baseUrl } from './client';
+import { ApiError, baseUrl, reportSessionFailure, sessionIdFor } from './client';
 export interface Evidence {
   id: string; projectId: string; taskId: string | null; inspectionItemId: string | null; issueId: string | null;
   originalName: string; mimeType: string; sizeBytes: number; sha256: string;
@@ -18,12 +18,16 @@ const errors: Record<number, string> = {
   503: 'Kho minh chứng chưa sẵn sàng. Giữ nguyên file và chú thích khi thử lại.',
 };
 export async function evidenceRequest<T>(token: string, path: string, options: RequestInit = {}, blob = false): Promise<T> {
+  const requestSessionId = sessionIdFor(token);
   const headers = new Headers(options.headers); headers.set('Authorization', `Bearer ${token}`);
   if (typeof options.body === 'string') headers.set('Content-Type', 'application/json');
   let response: Response;
   try { response = await fetch(baseUrl + path, { ...options, headers, signal: AbortSignal.timeout(30000) }); }
   catch { throw new ApiError(0, 'Chưa nhận được kết quả từ server. Retry cùng file/chú thích sẽ dùng lại key, không tạo trùng.'); }
-  if (!response.ok) throw new ApiError(response.status, errors[response.status] ?? 'Chưa xác nhận được kết quả. Giữ nguyên nội dung khi thử lại.');
+  if (!response.ok) {
+    if (response.status === 401) reportSessionFailure(token, requestSessionId);
+    throw new ApiError(response.status, errors[response.status] ?? 'Chưa xác nhận được kết quả. Giữ nguyên nội dung khi thử lại.');
+  }
   if (response.status === 204) return undefined as T;
   try { return await (blob ? response.blob() : response.json()) as T; }
   catch { throw new ApiError(0, 'Không đọc được phản hồi. Giữ nguyên nội dung khi thử lại.'); }

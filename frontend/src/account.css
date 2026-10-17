@@ -1,0 +1,29 @@
+.account-workspace { max-width: 1120px; margin: auto; padding: 24px clamp(16px, 4vw, 40px) 56px; }
+.account-topbar .brand { flex-direction: column; align-items: flex-start; gap: 3px; }
+.account-workspace .list-controls label, .account-workspace .list-pagination label { display: flex; flex-direction: column; gap: 7px; font-size: 13px; }
+.account-workspace .list-controls input, .account-workspace .list-controls select, .account-workspace .list-pagination select { min-height: 40px; width: 100%; padding: 8px 10px; border: 1px solid #c2cec4; border-radius: 3px; background: var(--surface); color: var(--ink); }
+.account-workspace .function-heading h1 { margin-right: auto; }
+.account-password { max-width: 560px; line-height: 1.6; }
+.account-password fieldset, .account-dialog fieldset { border: 0; padding: 0; margin: 0; min-width: 0; }
+.account-identity, .account-list h2, .account-open-work { overflow-wrap: anywhere; }
+.account-list-heading { display: flex; gap: 16px; align-items: center; justify-content: space-between; }
+.account-list > li { display: flex; align-items: center; justify-content: space-between; gap: 20px; padding: 22px 0; border-bottom: 1px solid var(--line); }
+.account-list h2 { font-size: 17px; margin: 0 0 12px; }
+.account-list p, .account-dialog .muted { font-size: 13px; line-height: 1.6; color: var(--muted); }
+.account-row-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.account-notice { border-left: 3px solid var(--forest); padding: 12px; background: var(--surface); }
+.account-open-work { max-height: 240px; overflow-y: auto; padding: 12px; border: 1px solid var(--line); margin-block: 16px; }
+.account-open-work small { display: block; }
+.account-open-work li { margin-bottom: 12px; }
+.account-dialog { max-height: 90dvh; overflow-y: auto; }
+@media(max-width:700px) {
+  .account-topbar { flex-wrap: wrap; }
+  .account-topbar .brand { flex-basis: 100%; }
+  .account-topbar .account-actions { width: 100%; justify-content: space-between; }
+  .account-topbar .account-identity { min-width: 0; flex: 1; }
+  .account-list-heading, .account-list > li { align-items: stretch; flex-direction: column; }
+  .account-workspace .form-actions { flex-wrap: wrap; }
+  .account-workspace .button, .account-dialog .button { white-space: normal; }
+  .account-actions { flex-wrap: wrap; gap: 8px; }
+  .account-workspace .function-heading { align-items: flex-start; }
+}

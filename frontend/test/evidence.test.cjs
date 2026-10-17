@@ -38,7 +38,7 @@ test('request gate rejects late response after target/unmount; object URL cleanu
   try {const urls=new state.EvidenceUrls(),a=urls.create(new Blob()),b=urls.create(new Blob());urls.release(a);urls.clear();urls.release(b);assert.deepEqual(deleted,[a,b]);}finally{URL.createObjectURL=create;URL.revokeObjectURL=revoke;}
 });
 test('API paths, multipart Bearer/key, nullable caption/version and Blob content match backend', async () => {
-  const api=load('api/evidence.ts',s=>s.replace("import { ApiError, baseUrl } from './client';",'const baseUrl="http://example.invalid"; class ApiError extends Error {constructor(public status:number,message:string){super(message)}}'));
+  const api=load('api/evidence.ts',s=>s.replace("import { ApiError, baseUrl, reportSessionFailure, sessionIdFor } from './client';",'const baseUrl="http://example.invalid"; const sessionIdFor=()=>null; const reportSessionFailure=()=>{}; class ApiError extends Error {constructor(public status:number,message:string){super(message)}}'));
   const original=global.fetch,calls=[];
   global.fetch=async(url,options)=>{calls.push({url,options});return new Response(JSON.stringify([]),{status:200,headers:{'Content-Type':'application/json'}})};
   try {

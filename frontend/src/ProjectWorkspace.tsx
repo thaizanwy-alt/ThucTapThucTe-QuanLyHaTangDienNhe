@@ -24,6 +24,8 @@ interface Props {
   token: string;
   user: User;
   onSignOut: () => void;
+  onManageAccounts?: () => void;
+  onChangePassword?: () => void;
 }
 
 type ProjectEditor = Project | 'new' | null;
@@ -135,7 +137,7 @@ function SystemForm({ initial, busy, onCancel, onSave }: {
   );
 }
 
-export default function ProjectWorkspace({ token, user, onSignOut }: Props) {
+export default function ProjectWorkspace({ token, user, onSignOut, onManageAccounts, onChangePassword }: Props) {
   const manager = user.role === 'MANAGER';
   const [projects, setProjects] = useState<Project[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -315,7 +317,7 @@ export default function ProjectWorkspace({ token, user, onSignOut }: Props) {
           <span className="brand-mark" aria-hidden="true"><span /></span>
           <span className="brand-copy">Hạ tầng điện nhẹ<small>Hồ sơ thi công</small></span>
         </a>
-        <div className="account-actions"><span className="role-chip">{manager ? 'Quản lý' : 'Kỹ thuật viên'}</span><span className="account-email">{user.email}</span><button className="button button-quiet signout" onClick={onSignOut}>Đăng xuất</button></div>
+        <div className="account-actions"><span className="role-chip">{manager ? 'Quản lý' : 'Kỹ thuật viên'}</span><span className="account-email">{user.email}</span>{manager && onManageAccounts && <button className="button button-quiet signout" onClick={onManageAccounts}>Quản lý tài khoản</button>}{onChangePassword && <button className="button button-quiet signout" onClick={onChangePassword}>Đổi mật khẩu</button>}<button className="button button-quiet signout" onClick={onSignOut}>Đăng xuất</button></div>
       </header>
 
       <main className={`workspace ${selectedProject ? 'has-selection' : ''}`}>

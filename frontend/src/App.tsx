@@ -3,6 +3,9 @@ import type { FormEvent } from 'react';
 import { ApiError, getMe, login } from './api/auth';
 import type { User } from './api/auth';
 import ProjectWorkspace from './ProjectWorkspace';
+import AccountWorkspace from './AccountWorkspace';
+import { invalidateSession, isCurrentSession, onSessionFailure, startSession } from './api/client';
+import type { SessionId } from './api/client';
 
 const TOKEN_KEY = 'elv-demo-access-token';
 const EXPIRED = 'Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.';
@@ -23,32 +26,60 @@ export default function App() {
   const [error, setError] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [screen, setScreen] = useState<'projects' | 'manage' | 'password'>('projects');
   const version = useRef(0);
+  const sessionIdRef = useRef<SessionId | null>(null);
+  const [sessionId, setSessionId] = useState<SessionId | null>(null);
 
-  const signOut = useCallback((message = '') => {
+  const signOut = useCallback((message = '', expectedSessionId?: SessionId) => {
+    if (expectedSessionId !== undefined && sessionIdRef.current !== expectedSessionId) return;
+    const oldSessionId = sessionIdRef.current;
+    if (oldSessionId !== null) invalidateSession(oldSessionId);
+    sessionIdRef.current = null;
+    setSessionId(null);
     version.current++;
     try { localStorage.removeItem(TOKEN_KEY); } catch { /* Storage may be disabled. */ }
     setToken(null); setUser(null); setPassword('');
+    setScreen('projects');
     setChecking(false); setPending(false); setError(message);
   }, []);
-  const handleSignOut = useCallback(() => signOut(), [signOut]);
+  // Callback passed to a workspace is bound to the session that rendered it.
+  // A request retained by an unmounted workspace cannot sign out a later session.
+  const handleSignOut = useCallback(() => {
+    if (sessionId !== null) signOut('', sessionId);
+  }, [sessionId, signOut]);
+
+  useEffect(() => onSessionFailure(event => {
+    if (event.sessionId !== sessionIdRef.current || !isCurrentSession(event.sessionId, event.token)) return;
+    if (event.kind === 'expired') signOut(EXPIRED, event.sessionId);
+    else { version.current++; setUser(current => current ? { ...current, mustChangePassword: true } : null); setScreen('password'); }
+  }), [signOut]);
 
   const restore = useCallback(async () => {
     const current = ++version.current;
     let saved: string | null;
     try { saved = localStorage.getItem(TOKEN_KEY); }
     catch { signOut('Trình duyệt không cho lưu phiên. Vui lòng cho phép bộ nhớ trang web.'); return; }
-    if (!saved) { setToken(null); setUser(null); setChecking(false); return; }
+    if (!saved) {
+      const oldSessionId = sessionIdRef.current;
+      if (oldSessionId !== null) invalidateSession(oldSessionId);
+      sessionIdRef.current = null; setSessionId(null);
+      setToken(null); setUser(null); setChecking(false); return;
+    }
     if (expiry(saved) <= Date.now()) { signOut(EXPIRED); return; }
+    const restoredSessionId = startSession(saved);
+    sessionIdRef.current = restoredSessionId;
+    setSessionId(restoredSessionId);
     setChecking(true); setError('');
     try {
       const account = await getMe(saved);
-      if (current !== version.current) return;
-      if (expiry(saved) <= Date.now()) { signOut(EXPIRED); return; }
+      if (current !== version.current || !isCurrentSession(restoredSessionId, saved)) return;
+      if (expiry(saved) <= Date.now()) { signOut(EXPIRED, restoredSessionId); return; }
       setToken(saved); setUser(account);
     } catch (cause) {
-      if (current !== version.current) return;
-      if (cause instanceof ApiError && cause.status === 401) { signOut(EXPIRED); return; }
+      if (current !== version.current || !isCurrentSession(restoredSessionId, saved)) return;
+      if (cause instanceof ApiError && cause.status === 401) { signOut(EXPIRED, restoredSessionId); return; }
+      invalidateSession(restoredSessionId); sessionIdRef.current = null; setSessionId(null);
       setUser(null); setToken(null);
       setError(cause instanceof Error ? cause.message : 'Không kiểm tra được phiên đăng nhập.');
     } finally { if (current === version.current) setChecking(false); }
@@ -63,42 +94,55 @@ export default function App() {
 
   useEffect(() => {
     if (!token) return;
-    const timeout = window.setTimeout(() => signOut(EXPIRED), Math.max(0, expiry(token) - Date.now()));
+    const activeSessionId = sessionId;
+    if (activeSessionId === null || !isCurrentSession(activeSessionId, token)) return;
+    const timeout = window.setTimeout(() => signOut(EXPIRED, activeSessionId), Math.max(0, expiry(token) - Date.now()));
     const verify = async () => {
       const current = version.current;
-      if (expiry(token) <= Date.now()) { signOut(EXPIRED); return; }
+      if (expiry(token) <= Date.now()) { signOut(EXPIRED, activeSessionId); return; }
       try {
         const account = await getMe(token);
-        if (current === version.current) setUser(account);
+        if (current === version.current && isCurrentSession(activeSessionId, token)) setUser(account);
       } catch (cause) {
-        if (current === version.current && cause instanceof ApiError && cause.status === 401) signOut(EXPIRED);
+        if (current === version.current && isCurrentSession(activeSessionId, token) && cause instanceof ApiError && cause.status === 401) signOut(EXPIRED, activeSessionId);
       }
     };
     window.addEventListener('focus', verify);
     return () => { clearTimeout(timeout); window.removeEventListener('focus', verify); };
-  }, [token, signOut]);
+  }, [token, sessionId, signOut]);
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (pending) return;
     const current = ++version.current;
     setPending(true); setError('');
+    let loginSessionId: SessionId | null = null;
     try {
       const accessToken = await login(email, password);
-      const account = await getMe(accessToken);
       if (current !== version.current) return;
-      if (expiry(accessToken) <= Date.now()) { signOut(EXPIRED); return; }
+      loginSessionId = startSession(accessToken);
+      sessionIdRef.current = loginSessionId;
+      setSessionId(loginSessionId);
+      const account = await getMe(accessToken);
+      if (current !== version.current || !isCurrentSession(loginSessionId, accessToken)) return;
+      if (expiry(accessToken) <= Date.now()) { signOut(EXPIRED, loginSessionId); return; }
       try { localStorage.setItem(TOKEN_KEY, accessToken); }
       catch { throw new Error('Không lưu được phiên. Vui lòng cho phép bộ nhớ trang web rồi thử lại.'); }
       setToken(accessToken); setUser(account); setPassword('');
     } catch (cause) {
       if (current !== version.current) return;
-      if (cause instanceof ApiError && cause.status === 401) { signOut(cause.message); return; }
+      if (cause instanceof ApiError && cause.status === 401) { signOut(cause.message, loginSessionId ?? undefined); return; }
+      if (loginSessionId !== null && isCurrentSession(loginSessionId)) {
+        invalidateSession(loginSessionId); sessionIdRef.current = null; setSessionId(null);
+      }
       setError(cause instanceof Error ? cause.message : 'Đăng nhập thất bại. Vui lòng thử lại.');
     } finally { if (current === version.current) setPending(false); }
   }
 
-  if (user && token) return <ProjectWorkspace token={token} user={user} onSignOut={handleSignOut} />;
+  if (user && token) {
+    if (user.mustChangePassword || screen !== 'projects') return <AccountWorkspace key={`${user.id}:${sessionId}:${screen}`} token={token} user={user} mode={screen === 'manage' ? 'manage' : 'password'} onBack={() => setScreen('projects')} onSignOut={handleSignOut} onPasswordChanged={() => signOut('Đổi mật khẩu thành công. Vui lòng đăng nhập lại.', sessionId ?? undefined)} />;
+    return <ProjectWorkspace token={token} user={user} onSignOut={handleSignOut} onManageAccounts={() => setScreen('manage')} onChangePassword={() => setScreen('password')} />;
+  }
 
   return (
     <div className="app-shell">

@@ -5,6 +5,8 @@ export interface User {
   email: string;
   role: 'MANAGER' | 'TECHNICIAN';
   isActive: boolean;
+  mustChangePassword: boolean;
+  version: number;
 }
 
 export async function login(email: string, password: string): Promise<string> {
@@ -29,10 +31,11 @@ export async function login(email: string, password: string): Promise<string> {
 export async function getMe(token: string): Promise<User> {
   const user = await apiRequest<User>('/auth/me', { token });
   if (typeof user.id !== 'string' || typeof user.email !== 'string' ||
-      !['MANAGER', 'TECHNICIAN'].includes(user.role) || user.isActive !== true) {
+      !['MANAGER', 'TECHNICIAN'].includes(user.role) || user.isActive !== true ||
+      typeof user.mustChangePassword !== 'boolean' || !Number.isInteger(user.version) || user.version < 1) {
     throw new Error('Thông tin tài khoản không hợp lệ. Vui lòng đăng nhập lại.');
   }
-  return { id: user.id, email: user.email, role: user.role, isActive: user.isActive };
+  return { id: user.id, email: user.email, role: user.role, isActive: user.isActive, mustChangePassword: user.mustChangePassword, version: user.version };
 }
 
 export { ApiError };

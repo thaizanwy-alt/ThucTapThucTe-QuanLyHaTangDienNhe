@@ -8,7 +8,7 @@ const ts = require('typescript');
 const filename = path.resolve(__dirname, '../src/api/exports.ts');
 const compiled = new Module(filename, module);
 class ApiError extends Error { constructor(status, message) { super(message); this.status = status; } }
-compiled.require = name => name === './client' ? { ApiError, baseUrl: 'http://localhost:3000' } : require(name);
+compiled.require = name => name === './client' ? { ApiError, baseUrl: 'http://localhost:3000', sessionIdFor: () => null, reportSessionFailure: () => {} } : require(name);
 compiled._compile(ts.transpileModule(fs.readFileSync(filename, 'utf8'), {
   compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
 }).outputText, filename);
