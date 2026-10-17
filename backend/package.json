@@ -40,7 +40,8 @@
     "reflect-metadata": "^0.2.2",
     "rxjs": "^7.8.0",
     "typeorm": "^0.3.20",
-    "write-excel-file": "4.1.1"
+    "write-excel-file": "4.1.1",
+    "yazl": "^3.3.1"
   },
   "devDependencies": {
     "@nestjs/cli": "^11.0.0",
@@ -48,6 +49,7 @@
     "@types/express": "^5.0.6",
     "@types/node": "^22.0.0",
     "@types/pdfkit": "^0.17.6",
-    "typescript": "^5.7.0"
+    "typescript": "^5.7.0",
+    "yauzl": "^3.4.0"
   }
 }

@@ -11,6 +11,7 @@ const renderModule = require('../dist/exports/exports.render');
 const { ExportsController } = require('../dist/exports/exports.controller');
 const { ExportsService } = require('../dist/exports/exports.service');
 const { ServiceUnavailableException } = require('@nestjs/common');
+const { zipExport } = renderModule;
 
 const fixture = path.join(__dirname, 'fixtures', 'xlsx-worker-fault.cjs');
 const one = name => [{ name, columns: ['Mã'], rows: [['Tiếng Việt']] }];
@@ -160,4 +161,12 @@ test('fault, timeout, cancellation and production byte limit stop only their wor
   assert.ok(abortedPid && !alive(abortedPid));
   const after = await fs.readdir(os.tmpdir());
   assert.deepEqual(after.filter(name => name.startsWith('elv-export-') && !baseline.has(name)), []);
+});
+
+test('ZIP source read failure is handled, waits for archive cleanup and removes partial output', { timeout: 10000 }, async () => {
+  const baseline = new Set(await fs.readdir(os.tmpdir()));
+  const missing = path.join(os.tmpdir(), `handover-missing-${process.pid}-${Date.now()}.png`);
+  await rejects(zipExport('failure.zip', { schemaVersion: 1 }, [{ path: missing, name: 'evidence/001.png' }]), 503);
+  const after = await fs.readdir(os.tmpdir());
+  assert.deepEqual(after.filter(name => name.startsWith('elv-handover-') && !baseline.has(name)), []);
 });

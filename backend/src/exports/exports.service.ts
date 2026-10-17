@@ -1,7 +1,11 @@
-import { ConflictException, ForbiddenException, Inject, Injectable, NotFoundException, Optional } from '@nestjs/common';
+import { ConflictException, ForbiddenException, GatewayTimeoutException, Inject, Injectable, NotFoundException, Optional, PayloadTooLargeException, ServiceUnavailableException } from '@nestjs/common';
 import { createHash } from 'node:crypto';
-import { stat } from 'node:fs/promises';
-import { join } from 'node:path';
+import { createReadStream, createWriteStream } from 'node:fs';
+import { mkdtemp, realpath, rm, stat } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { isAbsolute, join, relative, resolve, sep } from 'node:path';
+import { Transform } from 'node:stream';
+import { pipeline } from 'node:stream/promises';
 import { DataSource, EntityManager, In } from 'typeorm';
 import { AuthenticatedUser } from '../auth/auth.types';
 import { UserRole } from '../users/user-role.enum';
@@ -19,13 +23,13 @@ import { ConnectionEndpoint } from '../connections/connection-endpoint.entity';
 import { EndpointEnd, PortSide } from '../connections/connection.enums';
 import { AcceptanceEvidence, AcceptanceSnapshot, AcceptanceStatus, ProjectAcceptance } from '../acceptances/acceptance.entities';
 import { EvidenceStorage } from '../evidence/evidence.storage';
-import { EXPORT_LIMITS, ExportLimits, exportLimits, fileName, InputBudget, pdf, pdfTable, PDF_TEXT_FEATURES, PreparedExport, RowBudget, Sheet, text, workbook } from './exports.render';
+import { EXPORT_LIMITS, ExportLimits, exportLimits, fileName, InputBudget, MAX_BYTES, pdf, pdfTable, PDF_TEXT_FEATURES, PreparedExport, RowBudget, Sheet, text, workbook, zipExport } from './exports.render';
 import { acquireXlsxProcessSlot } from './xlsx-process-slot';
 
 type Snapshot = { project: {code:string;name:string}; system:{code:string;name:string}; acceptance:{code:string;title:string;note:string|null;replacesId:string|null;replacementReason:string|null};
   inspections: Array<{code:string;title:string;area?:{code:string;name:string}|null;device?:{code:string;name:string}|null;
     items:Array<{code:string;title:string;result:string;note:string|null}>;issues:Array<{id:string;status:string;description:string}>}>;
-  evidence:Array<{id:string;originalName:string;caption:string|null;sizeBytes:number;sha256:string}>;
+  evidence:Array<{id:string;originalName:string;mimeType:string;sizeBytes:number;sha256:string;caption:string|null;uploadedById:string;createdAt:string|Date}>;
   summary:{inspectionCount:number;itemCount:number;evidenceCount:number};actors:Array<{id:string;email:string}>;
   confirmedBy?:{id:string;email:string}; };
 const LIMIT_FONT = join(__dirname, 'fonts', 'NotoSans.ttf');
@@ -55,14 +59,152 @@ export function validSnapshot(x: any): x is Snapshot {
 function manager(user: AuthenticatedUser) { if (user.role !== UserRole.MANAGER) throw new ForbiddenException(); }
 function ordered<T extends {code:string}>(items:T[]) { return items.sort((a,b)=>a.code.localeCompare(b.code)); }
 function mark(value: string | number | boolean | null | undefined) { return value === null || value === undefined ? 'Chưa khai báo' : typeof value === 'boolean' ? value ? 'Bật' : 'Tắt' : text(value); }
+const evidenceExtension: Record<string,string> = { 'image/jpeg':'jpg', 'image/png':'png', 'application/pdf':'pdf' };
+async function digestFile(path:string) {
+  const hash=createHash('sha256'); let sizeBytes=0;
+  for await (const chunk of createReadStream(path)) { sizeBytes+=chunk.length; hash.update(chunk); }
+  return { sizeBytes, sha256:hash.digest('hex') };
+}
+
+type AcceptanceExportSource = { snapshot: Snapshot; snapshotAt: Date; nextCode: string | null; pins: AcceptanceEvidence[] };
 
 @Injectable()
 export class ExportsService {
   private readonly limits: ExportLimits;
   constructor(private readonly db: DataSource, private readonly storage: EvidenceStorage,
     @Optional() @Inject(EXPORT_LIMITS) options?: Partial<ExportLimits>) { this.limits = exportLimits(options); }
-  private read<T>(action: (m:EntityManager)=>Promise<T>) {
-    return this.db.transaction('REPEATABLE READ', async m => { await m.query('SET TRANSACTION READ ONLY'); return action(m); });
+  private async read<T>(action: (m:EntityManager)=>Promise<T>, control?: {deadlineAt:number; signal:AbortSignal}):Promise<T> {
+    if (!control) return this.db.transaction('REPEATABLE READ', async m => { await m.query('SET TRANSACTION READ ONLY'); return action(m); });
+    // The package gets a private one-connection pool and PostgreSQL startup
+    // timeouts. Abort closes only this local connection; server execution is
+    // bounded by statement_timeout, not PID signalling.
+    const exportDb=this.createPackageDataSource(Math.max(1,control.deadlineAt-Date.now()));
+    let failure:unknown;
+    try {
+      try { await exportDb.initialize(); }
+      catch(error) {
+        if(Date.now()>=control.deadlineAt) throw new GatewayTimeoutException('Handover package timed out',{cause:error});
+        throw new ServiceUnavailableException('Export database checkout unavailable',{cause:error});
+      }
+      if(Date.now()>=control.deadlineAt) throw new GatewayTimeoutException('Handover package timed out');
+      if(control.signal.aborted) throw new ServiceUnavailableException('Handover package canceled');
+      return await this.readPackageConnection(exportDb,action,control);
+    } catch(error) { failure=error; throw error; }
+    finally {
+      try {
+        if(exportDb.isInitialized) await exportDb.destroy();
+        else if((exportDb.driver as {master?:unknown}).master) await exportDb.driver.disconnect();
+      } catch(error) { if(!failure) throw error; }
+    }
+  }
+
+  private createPackageDataSource(remainingMs:number):DataSource {
+    const base=this.db.options;
+    if(base.type!=='postgres') throw new ServiceUnavailableException('Export database unavailable');
+    const checkoutMs=Math.max(1,Math.min(5000,remainingMs));
+    const startupOptions=[base.extra?.options,`-c statement_timeout=${Math.max(1,remainingMs)}ms -c lock_timeout=${Math.max(1,remainingMs)}ms`]
+      .filter((option):option is string=>typeof option==='string'&&option.length>0).join(' ');
+    return new DataSource({...base,entities:this.db.entityMetadatas.map(meta=>meta.target),migrations:[],subscribers:[],
+      poolSize:1,connectTimeoutMS:checkoutMs,extra:{...base.extra,max:1,connectionTimeoutMillis:checkoutMs,options:startupOptions},
+      synchronize:false,migrationsRun:false,dropSchema:false,installExtensions:false});
+  }
+
+  private async readPackageConnection<T>(db:DataSource,action:(m:EntityManager)=>Promise<T>,control:{deadlineAt:number;signal:AbortSignal}):Promise<T> {
+    const runner=db.createQueryRunner();
+    let acquired=false, releaseOnAcquire=false, released=false, releasePromise:Promise<void>|undefined;
+    const releaseRunner=()=>{
+      if(released)return releasePromise??Promise.resolve();
+      released=true; releasePromise=runner.release(); return releasePromise;
+    };
+    const connectPromise=runner.connect().then(async()=>{acquired=true;if(releaseOnAcquire)await releaseRunner();});
+    // If the absolute deadline wins the race, a late pool checkout still has an explicit release path.
+    void connectPromise.catch(()=>undefined);
+    let rejectAcquisition!:(error:Error)=>void;
+    const acquisitionAborted=new Promise<never>((_resolve,reject)=>{rejectAcquisition=reject;});
+    const onAcquireAbort=()=>rejectAcquisition(new Error('Database connection acquisition canceled'));
+    control.signal.addEventListener('abort',onAcquireAbort,{once:true});
+    try { await Promise.race([connectPromise,acquisitionAborted]); }
+    catch(error) {
+      if(acquired)await releaseRunner();
+      else {releaseOnAcquire=true;void connectPromise.then(()=>releaseRunner()).catch(()=>undefined);}
+      if(Date.now()>=control.deadlineAt)throw new GatewayTimeoutException('Handover package timed out',{cause:error});
+      if(control.signal.aborted)throw new ServiceUnavailableException('Handover package canceled',{cause:error});
+      throw new ServiceUnavailableException('Export database checkout unavailable',{cause:error});
+    } finally { control.signal.removeEventListener('abort',onAcquireAbort); }
+    const rawQuery=runner.query.bind(runner);
+    let committed=false, closePromise:Promise<void>|undefined, failure:unknown;
+    const expired=()=>Date.now()>=control.deadlineAt;
+    const postgresCode=(error:unknown)=>{
+      const value=error as {code?:string;driverError?:{code?:string}};
+      return value?.driverError?.code??value?.code;
+    };
+    const check=()=>{
+      if(expired()) throw new GatewayTimeoutException('Handover package timed out');
+      if(control.signal.aborted) throw new ServiceUnavailableException('Handover package canceled');
+    };
+    const closeTarget=()=>{
+      if(closePromise) return closePromise;
+      const connection=(runner as any).databaseConnection as {end?:()=>Promise<void>}|undefined;
+      closePromise=connection?.end?Promise.resolve().then(()=>connection.end!()):Promise.resolve();
+      void closePromise.catch(()=>undefined);
+      return closePromise;
+    };
+    const onAbort=()=>{ void closeTarget().catch(()=>undefined); };
+    control.signal.addEventListener('abort',onAbort);
+    if(control.signal.aborted) onAbort();
+    try {
+      check();
+      await runner.startTransaction('REPEATABLE READ');
+      await rawQuery('SET TRANSACTION READ ONLY');
+      const guardedQuery=async (sql:string, parameters?:unknown[], structured?:boolean) => {
+        check();
+        const remaining=Math.max(1,control.deadlineAt-Date.now());
+        // Each statement gets only the remaining absolute task budget; lock waits cannot outlive it.
+        await rawQuery(`SET LOCAL statement_timeout = '${remaining}ms'`);
+        await rawQuery(`SET LOCAL lock_timeout = '${remaining}ms'`);
+        check();
+        try { return await (rawQuery as any)(sql,parameters,structured); }
+        catch(error) {
+          if(expired()||(!control.signal.aborted&&['57014','55P03'].includes(postgresCode(error)??'')))
+            throw new GatewayTimeoutException('Handover package timed out');
+          if(control.signal.aborted) throw new ServiceUnavailableException('Handover package canceled');
+          throw error;
+        }
+      };
+      (runner as any).query=guardedQuery;
+      const result=await action(runner.manager);
+      check();
+      await runner.commitTransaction(); committed=true;
+      return result;
+    } catch(error) {
+      if(expired()||(!control.signal.aborted&&['57014','55P03'].includes(postgresCode(error)??'')))
+        failure=new GatewayTimeoutException('Handover package timed out',{cause:error});
+      else if(control.signal.aborted && !(error instanceof GatewayTimeoutException))
+        failure=new ServiceUnavailableException('Handover package canceled',{cause:error});
+      else failure=error;
+      throw failure;
+    } finally {
+      control.signal.removeEventListener('abort',onAbort);
+      let cleanupError:unknown;
+      // On abort, Client.end() destroys the local socket if a query is active.
+      // Do not enqueue ROLLBACK on an uncertain connection; destroying this
+      // private pool prevents reuse while server statement_timeout is the bound.
+      if(closePromise) {
+        try { await closePromise; } catch(error) { cleanupError=error; }
+      }
+      if(!closePromise&&!committed&&runner.isTransactionActive) {
+        (runner as any).query=rawQuery;
+        try { await runner.rollbackTransaction(); }
+        catch(error) { cleanupError=error; }
+      }
+      if(acquired) {
+        try { await releaseRunner(); }
+        catch(error) { cleanupError??=error; }
+      }
+      // The entire private pool is destroyed by read(); a failed rollback is
+      // never returned to the application's pool or another export request.
+      if(cleanupError&&!failure) throw cleanupError;
+    }
   }
   private async project(m:EntityManager, id:string) {
     const project=await m.findOneBy(Project,{id});
@@ -81,22 +223,18 @@ export class ExportsService {
       } finally { await handle.close(); }
     } catch { return 'KHÔNG THỂ KIỂM TRA'; }
   }
-  async acceptancePdf(projectId:string,id:string,user:AuthenticatedUser):Promise<PreparedExport> {
-    manager(user); const at=new Date();
-    const source=await this.read(async m=>{
-      await this.project(m,projectId);
-      const a=await m.findOneBy(ProjectAcceptance,{projectId,id});
-      if(!a)throw new NotFoundException('Acceptance not found');
-      if(a.status!==AcceptanceStatus.CONFIRMED)throw new ConflictException('Only confirmed acceptance can be exported');
-      const s=await m.findOneBy(AcceptanceSnapshot,{projectId,acceptanceId:a.id});
-      if(!s||s.schemaVersion!==1||!validSnapshot(s.content))throw new ConflictException('Acceptance snapshot unavailable or unsupported');
-      const next=await m.findOneBy(ProjectAcceptance,{projectId,replacesId:a.id,status:AcceptanceStatus.CONFIRMED});
-      const pins=await m.findBy(AcceptanceEvidence,{projectId,acceptanceId:a.id});
-      return {snapshot:s.content as Snapshot,snapshotAt:s.createdAt,nextCode:next?.code??null,pins};
-    });
-    const checks: Array<{ file: Snapshot['evidence'][number]; state: string }> = [];
-    for(const f of source.snapshot.evidence){const pin=source.pins.find(p=>p.evidenceId===f.id);
-      checks.push({file:f,state:await this.integrity(pin?.pinnedStorageKey??null,f)});}
+  private async acceptanceSourceIn(m:EntityManager, projectId:string, id:string):Promise<AcceptanceExportSource> {
+    await this.project(m,projectId);
+    const a=await m.findOneBy(ProjectAcceptance,{projectId,id});
+    if(!a)throw new NotFoundException('Acceptance not found');
+    if(a.status!==AcceptanceStatus.CONFIRMED)throw new ConflictException('Only confirmed acceptance can be exported');
+    const s=await m.findOneBy(AcceptanceSnapshot,{projectId,acceptanceId:a.id});
+    if(!s||s.schemaVersion!==1||!validSnapshot(s.content))throw new ConflictException('Acceptance snapshot unavailable or unsupported');
+    const next=await m.findOneBy(ProjectAcceptance,{projectId,replacesId:a.id,status:AcceptanceStatus.CONFIRMED});
+    const pins=await m.findBy(AcceptanceEvidence,{projectId,acceptanceId:a.id});
+    return {snapshot:s.content as Snapshot,snapshotAt:s.createdAt,nextCode:next?.code??null,pins};
+  }
+  private async renderAcceptancePdf(source:AcceptanceExportSource, at:Date, checks:Array<{file:Snapshot['evidence'][number];state:string}>, signal?:AbortSignal) {
     const name=fileName(source.snapshot.acceptance.code,'nghiem-thu',at)+'.pdf';
     return pdf(name, LIMIT_FONT, async (doc, checkpoint) => {
       const line = async (label: string, body: unknown) => {
@@ -129,12 +267,19 @@ export class ExportsService {
       doc.fontSize(12).text('MINH CHỨNG (CHỈ METADATA)', 45, doc.y, { width: 505, features: PDF_TEXT_FEATURES });
       for (const { file, state } of checks) await line(file.originalName, file.sizeBytes + ' byte · ' + (file.caption ?? 'Không chú thích') + ' · SHA-256 ' + file.sha256 + ' · ' + state);
       await line('Người xác nhận', source.snapshot.confirmedBy?.email ?? 'Chưa ghi nhận');
-    }, this.limits);
+    }, this.limits, signal);
+  }
+  async acceptancePdf(projectId:string,id:string,user:AuthenticatedUser):Promise<PreparedExport> {
+    manager(user); const at=new Date();
+    const source=await this.read(m=>this.acceptanceSourceIn(m,projectId,id));
+    const checks: Array<{ file: Snapshot['evidence'][number]; state: string }> = [];
+    for(const f of source.snapshot.evidence){const pin=source.pins.find(p=>p.evidenceId===f.id);
+      checks.push({file:f,state:await this.integrity(pin?.pinnedStorageKey??null,f)});}
+    return this.renderAcceptancePdf(source,at,checks);
   }
 
-  private async current(projectId: string, kind: 'devices' | 'connections') {
-    return this.read(async m => {
-      const at = new Date(), project = await this.project(m, projectId);
+  private async currentIn(m: EntityManager, projectId: string, kind: 'devices' | 'connections', at = new Date()) {
+      const project = await this.project(m, projectId);
       // Count all output rows before loading sources, in this same snapshot.
       const query = kind === 'devices' ? `
         SELECT 7 + count(*) + count(*) FILTER (WHERE type = 'RACK') AS rows
@@ -166,15 +311,22 @@ export class ExportsService {
       const connections = kind === 'connections' ? await m.findBy(PhysicalConnection, { projectId }) : [];
       const endpoints = kind === 'connections' ? await m.findBy(ConnectionEndpoint, { projectId }) : [];
       return { project, devices, areas, systems, links, served, profiles, ports, connections, endpoints, at };
-    });
+  }
+  private current(projectId: string, kind: 'devices' | 'connections') {
+    return this.read(m => this.currentIn(m, projectId, kind));
   }
   private info(project:Project,at:Date):Sheet {return {name:'Thông tin',columns:['Thuộc tính','Giá trị'],rows:[
     ['Phạm vi',`${project.code} — ${project.name}`],['Nguồn','Dữ liệu hiện tại, không phải snapshot nghiệm thu'],
     ['Thời điểm đọc UTC',at.toISOString()],['Thời điểm xuất UTC',new Date().toISOString()]]};}
   async devicesWorkbook(projectId:string,user:AuthenticatedUser,signal?:AbortSignal):Promise<PreparedExport> {
     manager(user);const release=acquireXlsxProcessSlot();
+    let transferred=false;
     try {
-    const g=await this.current(projectId, 'devices');
+      const file=await this.renderDevicesWorkbook(await this.current(projectId, 'devices'), signal);
+      this.attachSlot(file,release); transferred=true; return file;
+    } finally { if(!transferred) release(); }
+  }
+  private async renderDevicesWorkbook(g: Awaited<ReturnType<ExportsService['currentIn']>>, signal?:AbortSignal):Promise<PreparedExport> {
     const budget = new RowBudget(this.limits.maxRows), input = new InputBudget(this.limits.maxInputBytes); budget.add(7);
     const checked = (row: (string | number | null)[]) => { input.row(row); return row; };
     const byDevice=new Map(g.devices.map(d=>[d.id,d]));const byArea=new Map(g.areas.map(a=>[a.id,a.code]));const bySystem=new Map(g.systems.map(s=>[s.id,s.code]));
@@ -192,12 +344,23 @@ export class ExportsService {
     return await workbook(fileName(g.project.code,'thiet-bi',g.at)+'.xlsx',[this.info(g.project,g.at),
       {name:'Thiết bị',columns:['Mã','Tên','Loại','Hãng','Model','Serial','System','Area trực tiếp','Area hiệu lực','Ghi chú vị trí','Rack','Kiểu xếp','U bắt đầu','Chiều cao U','Chế độ IP','IP','MAC'],rows},
       {name:'Tủ',columns:['Mã','Vai trò','Tủ cha','Area đặt','Sức chứa U','Area phục vụ'],rows:racks}], this.limits, signal);
-    } finally { release(); }
   }
   async connectionsWorkbook(projectId:string,user:AuthenticatedUser,signal?:AbortSignal):Promise<PreparedExport> {
     manager(user);const release=acquireXlsxProcessSlot();
+    let transferred=false;
     try {
-    const g=await this.current(projectId, 'connections');
+      const file=await this.renderConnectionsWorkbook(await this.current(projectId, 'connections'), signal);
+      this.attachSlot(file,release); transferred=true; return file;
+    } finally { if(!transferred) release(); }
+  }
+
+  private attachSlot(file:PreparedExport,release:()=>void):void {
+    const cleanup=file.cleanup; let cleaned=false, released=false;
+    const releaseOnce=()=>{ if(released)return; released=true; release(); };
+    file.release=releaseOnce;
+    file.cleanup=async()=>{ if(cleaned){ releaseOnce(); return; } cleaned=true; try { await cleanup(); } finally { releaseOnce(); } };
+  }
+  private async renderConnectionsWorkbook(g: Awaited<ReturnType<ExportsService['currentIn']>>, signal?:AbortSignal):Promise<PreparedExport> {
     const budget = new RowBudget(this.limits.maxRows), input = new InputBudget(this.limits.maxInputBytes); budget.add(8);
     const checked = (row: (string | number | null)[]) => { input.row(row); return row; };
     const device=new Map(g.devices.map(d=>[d.id,d]));const port=new Map(g.ports.map(p=>[p.id,p]));
@@ -236,6 +399,165 @@ export class ExportsService {
       {name:'Cổng',columns:['Thiết bị','Mã cổng','Mô tả','Mặt','Connection ID/Trạng thái','VLAN','PoE'],rows:ports},
       {name:'Dây',columns:['Nhãn','Loại','Version','Đầu A','Mặt A','Đầu B','Mặt B'],rows:wires},
       {name:'Tra cứu',columns:['Thiết bị nguồn','Cổng nguồn','Các đoạn dây','Độ đầy đủ','Panel/port','Rack qua đường','Switch/port','VLAN / PoE'],rows:traces}], this.limits, signal);
-    } finally { release(); }
+  }
+
+  private async packageTempDirectory():Promise<string> {
+    try {
+      const base=await realpath(tmpdir()), repo=await realpath(resolve(__dirname,'../../..'));
+      const rel=relative(repo,base);
+      if(!rel||(!rel.startsWith('..'+sep)&&rel!=='..'&&!isAbsolute(rel))) throw new ServiceUnavailableException('Unsafe temporary storage');
+      return await mkdtemp(join(base,'elv-handover-stage-'));
+    } catch(error) { if(error instanceof ServiceUnavailableException) throw error; throw new ServiceUnavailableException('Temporary storage unavailable'); }
+  }
+
+  private async stagePinnedEvidence(source:AcceptanceExportSource, file:Snapshot['evidence'][number], index:number, dir:string,
+    signal:AbortSignal, aggregate:{used:number;limit:number}) {
+    const id=file.id.toLowerCase();
+    const pin=source.pins.find(p=>p.evidenceId.toLowerCase()===id);
+    const key=pin?.pinnedStorageKey;
+    const extension=evidenceExtension[file.mimeType];
+    const uploader=source.snapshot.actors.find(a=>a.id.toLowerCase()===String((file as any).uploadedById).toLowerCase());
+    const createdAt=new Date((file as any).createdAt);
+    if(!key||!/^[a-f0-9-]{36}$/i.test(key)||!extension||!uploader||!Number.isSafeInteger(file.sizeBytes)||file.sizeBytes<1||file.sizeBytes>10*1024*1024
+      ||!Number.isFinite(createdAt.getTime())||!(/^[a-f0-9]{64}$/i.test(file.sha256)))
+      throw new ConflictException('Pinned evidence snapshot is incomplete');
+    const root=await this.storage.root();
+    try { const info=await stat(join(root,'files',key)); if(!info.isFile()) throw new ConflictException('Pinned evidence file is unavailable'); }
+    catch(error) {
+      if(error instanceof ConflictException) throw error;
+      if((error as NodeJS.ErrnoException).code==='ENOENT') throw new ConflictException('Pinned evidence file is missing');
+      throw new ServiceUnavailableException('Evidence storage unavailable');
+    }
+    const stagedPath=join(dir,`evidence-${String(index+1).padStart(3,'0')}.${extension}`);
+    let handle;
+    try { handle=await this.storage.content(key); }
+    catch { throw new ServiceUnavailableException('Evidence storage unavailable'); }
+    const hash=createHash('sha256'); let sizeBytes=0;
+    const counted=new Transform({ transform(chunk:Buffer,_encoding,callback) {
+      if(signal.aborted) return callback(new Error('canceled'));
+      sizeBytes+=chunk.length; aggregate.used+=chunk.length;
+      if(sizeBytes>file.sizeBytes) return callback(new ConflictException('Pinned evidence size differs from snapshot'));
+      if(aggregate.used>aggregate.limit) return callback(new PayloadTooLargeException('Handover package exceeds uncompressed byte limit'));
+      hash.update(chunk); callback(null,chunk);
+    }});
+    const input=handle.createReadStream({autoClose:false});
+    const output=createWriteStream(stagedPath,{flags:'wx',mode:0o600});
+    try {
+      await pipeline(input,counted,output,{signal});
+    } catch(error) {
+      input.destroy(); counted.destroy(); output.destroy();
+      await Promise.all([input.closed?Promise.resolve():new Promise<void>(resolve=>input.once('close',()=>resolve())),
+        output.closed?Promise.resolve():new Promise<void>(resolve=>output.once('close',()=>resolve()))]);
+      await rm(stagedPath,{force:true}).catch(()=>undefined);
+      if(signal.aborted) throw new ServiceUnavailableException('Handover package canceled');
+      if(error instanceof ConflictException||error instanceof PayloadTooLargeException) throw error;
+      throw new ServiceUnavailableException('Cannot read pinned evidence');
+    } finally { await handle.close().catch(()=>undefined); }
+    if(sizeBytes!==file.sizeBytes||hash.digest('hex')!==file.sha256.toLowerCase()) {
+      await rm(stagedPath,{force:true});
+      throw new ConflictException('Pinned evidence checksum differs from snapshot');
+    }
+    return { path:stagedPath, name:`evidence/${String(index+1).padStart(3,'0')}.${extension}`,
+      mimeType:file.mimeType,sizeBytes,sha256:file.sha256.toLowerCase(),originalName:file.originalName,caption:file.caption,
+      uploader:uploader.email,uploadedAt:createdAt.toISOString() };
+  }
+
+  async handoverPackage(projectId:string,id:string,user:AuthenticatedUser,requestSignal?:AbortSignal):Promise<PreparedExport> {
+    manager(user);
+    const deadlineAt=Date.now()+this.limits.handoverTimeoutMs;
+    const release=acquireXlsxProcessSlot();
+    const controller=new AbortController();
+    const onRequestAbort=()=>controller.abort();
+    requestSignal?.addEventListener('abort',onRequestAbort,{once:true});
+    if(requestSignal?.aborted) onRequestAbort();
+    let timedOut=false;
+    const timer=setTimeout(()=>{timedOut=true;controller.abort();},this.limits.handoverTimeoutMs);
+    const signal=controller.signal;
+    let stageDir:string|undefined;
+    const prepared:PreparedExport[]=[];
+    let finalZip:PreparedExport|undefined;
+    let slotTransferred=false;
+    const check=()=>{ if(timedOut) throw new GatewayTimeoutException('Handover package timed out'); if(signal.aborted) throw new ServiceUnavailableException('Handover package canceled'); };
+    try {
+      check();
+      const source=await this.read(async m=>{
+        const [{ startedAt }]=await m.query('SELECT transaction_timestamp() AS "startedAt"');
+        const acceptance=await this.acceptanceSourceIn(m,projectId,id);
+        const currentAt=new Date(startedAt);
+        const current={ devices:await this.currentIn(m,projectId,'devices',currentAt), connections:await this.currentIn(m,projectId,'connections',currentAt) };
+        return { acceptance,current,currentAt };
+      },{deadlineAt,signal});
+      check();
+      const evidence=source.acceptance.snapshot.evidence;
+      if(evidence.length>this.limits.maxPackageEvidence) throw new PayloadTooLargeException('Handover package has too many evidence files');
+      const expectedEvidenceBytes=evidence.reduce((total,file)=>total+file.sizeBytes,0);
+      if(!Number.isSafeInteger(expectedEvidenceBytes)||expectedEvidenceBytes>this.limits.maxPackageBytes)
+        throw new PayloadTooLargeException('Handover package exceeds uncompressed byte limit');
+      stageDir=await this.packageTempDirectory();
+      const checks=evidence.map(file=>({file,state:'KHỚP SHA-256'}));
+      prepared.push(await this.renderAcceptancePdf(source.acceptance,source.currentAt,checks,signal));
+      check();
+      // This package owns the process-wide XLSX slot; render-only calls avoid reacquiring it.
+      prepared.push(await this.renderDevicesWorkbook(source.current.devices,signal));
+      check();
+      prepared.push(await this.renderConnectionsWorkbook(source.current.connections,signal));
+      check();
+      const baseEntries=[
+        {path:prepared[0].path,name:'acceptance/acceptance.pdf',kind:'acceptance-snapshot-pdf',source:'acceptance-snapshot'},
+        {path:prepared[1].path,name:'current/devices.xlsx',kind:'current-project-devices',source:'current-project-read'},
+        {path:prepared[2].path,name:'current/connections.xlsx',kind:'current-project-connections',source:'current-project-read'},
+      ];
+      const fileRecords=[]; let artifactBytes=0;
+      for(const entry of baseEntries) {
+        const digest=await digestFile(entry.path); artifactBytes+=digest.sizeBytes;
+        fileRecords.push({path:entry.name,kind:entry.kind,source:entry.source,sizeBytes:digest.sizeBytes,sha256:digest.sha256});
+      }
+      const uploaderById=new Map(source.acceptance.snapshot.actors.map(actor=>[actor.id.toLowerCase(),actor.email]));
+      const expectedFiles=evidence.map((file,index)=>{
+        const uploader=uploaderById.get(file.uploadedById.toLowerCase());
+        const extension=evidenceExtension[file.mimeType];
+        if(!uploader||!extension||!Number.isSafeInteger(file.sizeBytes)||file.sizeBytes<1||!Number.isFinite(new Date(file.createdAt).getTime()))
+          throw new ConflictException('Pinned evidence snapshot is incomplete');
+        return {path:`evidence/${String(index+1).padStart(3,'0')}.${extension}`,kind:'pinned-evidence',source:'acceptance-snapshot',
+          sizeBytes:file.sizeBytes,sha256:file.sha256.toLowerCase(),originalName:file.originalName,caption:file.caption,uploader,
+          mimeType:file.mimeType,uploadedAt:new Date(file.createdAt).toISOString()};
+      });
+      fileRecords.push(...expectedFiles);
+      const generatedAt=new Date();
+      const manifest={schemaVersion:1,generatedAt:generatedAt.toISOString(),project:{code:source.acceptance.snapshot.project.code,name:source.acceptance.snapshot.project.name},
+        acceptance:{code:source.acceptance.snapshot.acceptance.code,title:source.acceptance.snapshot.acceptance.title,status:'CONFIRMED',
+          snapshotAt:source.acceptance.snapshotAt.toISOString(),replacementStatusAtExport:source.acceptance.nextCode?'REPLACED':'NOT_REPLACED',
+          replacementStatusAt:source.currentAt.toISOString(),replacedByCode:source.acceptance.nextCode},
+        currentData:{snapshotAt:source.currentAt.toISOString(),source:'READ ONLY REPEATABLE READ'},files:fileRecords};
+      const manifestBytes=Buffer.byteLength(JSON.stringify(manifest,null,2)+'\n','utf8');
+      const stagingAllowance=this.limits.maxPackageBytes-artifactBytes-manifestBytes;
+      if(stagingAllowance<0||expectedEvidenceBytes>stagingAllowance)
+        throw new PayloadTooLargeException('Handover package exceeds uncompressed byte limit');
+      const aggregate={used:0,limit:stagingAllowance};
+      const stagedEvidence=[];
+      for(let index=0;index<evidence.length;index++) {
+        check(); stagedEvidence.push(await this.stagePinnedEvidence(source.acceptance,evidence[index],index,stageDir,signal,aggregate));
+      }
+      check();
+      const uncompressedBytes=artifactBytes+aggregate.used+manifestBytes;
+      if(uncompressedBytes>this.limits.maxPackageBytes) throw new PayloadTooLargeException('Handover package exceeds uncompressed byte limit');
+      finalZip=await zipExport(fileName(source.acceptance.snapshot.acceptance.code,'ban-giao',generatedAt)+'.zip',manifest,
+        [...baseEntries,...stagedEvidence.map(file=>({path:file.path,name:file.name}))],this.limits,signal);
+      check();
+      finalZip.deadlineAt=deadlineAt;
+      this.attachSlot(finalZip,release);
+      // The controller owns this lease until the response finishes or is aborted.
+      slotTransferred=true;
+      return finalZip;
+    } catch(error) {
+      if(finalZip) await finalZip.cleanup();
+      if(timedOut) throw new GatewayTimeoutException('Handover package timed out');
+      throw error;
+    } finally {
+      clearTimeout(timer); requestSignal?.removeEventListener('abort',onRequestAbort);
+      for(const file of prepared) await file.cleanup().catch(()=>undefined);
+      if(stageDir) await rm(stageDir,{recursive:true,force:true}).catch(()=>undefined);
+      if(!slotTransferred) release();
+    }
   }
 }
