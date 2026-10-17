@@ -37,7 +37,7 @@ export default function ExportDownloadButton({ token, projectId, kind, acceptanc
     const request = ++generation.current;
     const controller = new AbortController(); active.current = controller;
     let timedOut = false;
-    const timeout = setTimeout(() => { timedOut = true; controller.abort(); }, 60000);
+    const timeout = setTimeout(() => { timedOut = true; controller.abort(); }, kind === 'handover-package' ? 125000 : 60000);
     const current = () => alive.current && generation.current === request && scopeRef.current === scope;
     setBusy(true); setError('');
     try {

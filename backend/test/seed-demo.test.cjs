@@ -222,3 +222,106 @@ test('Task seed preflights all existing tasks before writing when another fixtur
     asManager, asTechnician, created: { tasks: 0, taskTransitions: 0 } }), /TASK-OTHER conflicts/);
   assert.equal(writes, 0);
 });
+
+test('new returned Task has a distinct code; legacy fixture is never in the managed Task list', () => {
+  const { TASK_SPECS } = require('../scripts/seed-demo.cjs');
+  assert.equal(TASK_SPECS.some(x => x.code === 'TASK-CAM-RETURNED'), false);
+  assert.equal(TASK_SPECS.find(x => x.code === 'TASK-CAM-RETURNED-V2')?.status, 'RETURNED');
+});
+
+test('workflow checkpoint accepts unfinished intent and refuses changed inspection data', () => {
+  const { assertInspectionCheckpoint, INSPECTIONS } = require('../scripts/seed-demo-workflow.cjs');
+  const templateId = randomUUID(), systemId = randomUUID(), assigneeId = randomUUID();
+  const template = { id: templateId, revision: 1, items: [{ code: 'LABEL', title: 'Nhãn', instruction: 'Kiểm tra nhãn', sortOrder: 1 }] };
+  const spec = INSPECTIONS.find(x => x.code === 'DEMO-INSP-LAN-PASS');
+  const sheet = { code: spec.code, title: spec.title, systemId, areaId: randomUUID(), deviceId: null,
+    templateId, templateRevision: 1, items: [{ code: 'LABEL', title: 'Nhãn', instruction: 'Kiểm tra nhãn', sortOrder: 1,
+      result: 'NOT_CHECKED', note: null, version: 1, issues: [] }] };
+  assert.doesNotThrow(() => assertInspectionCheckpoint(sheet, spec, template, systemId, sheet.areaId, null, assigneeId));
+  sheet.items[0].result = 'PASS'; sheet.items[0].note = 'Kết quả giả định theo phiếu demo.'; sheet.items[0].version = 2;
+  assert.doesNotThrow(() => assertInspectionCheckpoint(sheet, spec, template, systemId, sheet.areaId, null, assigneeId));
+  assert.throws(() => assertInspectionCheckpoint({ ...sheet, title: 'User edit' }, spec, template, systemId, sheet.areaId, null, assigneeId), /conflicts/);
+  assert.throws(() => assertInspectionCheckpoint({ ...sheet, items: [{ ...sheet.items[0], note: 'User edit' }] }, spec, template, systemId, sheet.areaId, null, assigneeId), /conflicts/);
+});
+
+test('acceptance checkpoint keeps explicit selection and confirmed snapshot immutable', () => {
+  const { assertAcceptanceCheckpoint, ACCEPTANCES, PDF } = require('../scripts/seed-demo-workflow.cjs');
+  assert.match(PDF.subarray(0, 8).toString(), /^%PDF-1\.4/);
+  const spec = ACCEPTANCES.find(x => x.code === 'DEMO-AC-CONFIRMED-V2');
+  const systemId = randomUUID(), inspectionId = randomUUID(), evidenceId = randomUUID(), predecessorId = randomUUID();
+  const row = { code: spec.code, title: spec.title, systemId, replacesId: predecessorId, note: null,
+    replacementReason: 'Thay thế hồ sơ demo để minh họa lịch sử phiên bản.', version: 1,
+    inspectionIds: [inspectionId], evidenceIds: [evidenceId], status: 'DRAFT', snapshot: null };
+  assert.doesNotThrow(() => assertAcceptanceCheckpoint(row, spec, systemId, inspectionId, evidenceId, predecessorId));
+  const confirmed = { ...row, status: 'CONFIRMED', version: 2, confirmedAt: new Date().toISOString(),
+    snapshot: { schemaVersion: 1, content: { acceptance: { code: spec.code }, system: { id: systemId }, inspections: [{ id: inspectionId }] } } };
+  assert.doesNotThrow(() => assertAcceptanceCheckpoint(confirmed, spec, systemId, inspectionId, evidenceId, predecessorId));
+  assert.throws(() => assertAcceptanceCheckpoint({ ...confirmed, evidenceIds: [] }, spec, systemId, inspectionId, evidenceId, predecessorId), /conflicts/);
+  assert.throws(() => assertAcceptanceCheckpoint({ ...confirmed, snapshot: null }, spec, systemId, inspectionId, evidenceId, predecessorId), /conflicts/);
+});
+
+test('issue checkpoints resume OPEN to RESOLVED and reject edited or inconsistent closed history', () => {
+  const { assertInspectionCheckpoint, INSPECTIONS } = require('../scripts/seed-demo-workflow.cjs');
+  const spec = INSPECTIONS.find(x => x.code === 'DEMO-INSP-CAM-RESOLVED');
+  const closed = INSPECTIONS.find(x => x.code === 'DEMO-INSP-CAM-CLOSED');
+  const systemId = randomUUID(), deviceId = randomUUID(), areaId = randomUUID(), techId = randomUUID();
+  const template = { id: randomUUID(), revision: 1, items: [{ code: 'INSTALL', title: 'Lắp đặt', instruction: 'Kiểm tra lắp đặt', sortOrder: 1 }] };
+  const issue = { description: 'Ảnh hoặc nhãn camera demo chưa đạt; cần khắc phục.', assigneeId: techId,
+    status: 'OPEN', version: 1, returnReason: null, resolutionNote: null, reviewedAt: null };
+  const item = { ...template.items[0], result: 'FAIL', note: 'Kết quả giả định theo phiếu demo.', version: 2, issues: [issue] };
+  const sheet = { code: spec.code, title: spec.title, systemId, areaId: null, deviceId,
+    templateId: template.id, templateRevision: 1, items: [item] };
+  assert.doesNotThrow(() => assertInspectionCheckpoint(sheet, spec, template, systemId, null, deviceId, techId));
+  issue.status = 'IN_PROGRESS'; issue.version = 2;
+  assert.doesNotThrow(() => assertInspectionCheckpoint(sheet, spec, template, systemId, null, deviceId, techId));
+  issue.status = 'RESOLVED'; issue.version = 3; issue.resolutionNote = 'Đã sửa theo mô phỏng và đề nghị kiểm tra lại.';
+  assert.doesNotThrow(() => assertInspectionCheckpoint(sheet, spec, template, systemId, null, deviceId, techId));
+  assert.throws(() => assertInspectionCheckpoint({ ...sheet, items: [{ ...item, issues: [{ ...issue, description: 'User edit' }] }] },
+    spec, template, systemId, null, deviceId, techId), /conflicts/);
+  issue.status = 'CLOSED'; issue.version = 4; issue.reviewedAt = new Date().toISOString();
+  item.result = 'PASS'; item.version = 3; item.note = 'Đã kiểm tra lại theo kịch bản demo.';
+  const closedSheet = { ...sheet, code: closed.code, title: closed.title, areaId, deviceId: null };
+  assert.doesNotThrow(() => assertInspectionCheckpoint(closedSheet, closed, template, systemId, areaId, null, techId));
+  issue.version = 3;
+  assert.throws(() => assertInspectionCheckpoint(closedSheet, closed, template, systemId, areaId, null, techId), /conflicts/);
+});
+
+test('workflow preflight rejects an edited fixture before any write, and accepts an empty fresh fixture', async () => {
+  const { seedWorkflow, INSPECTIONS } = require('../scripts/seed-demo-workflow.cjs');
+  const systemId = randomUUID(), templateId = randomUUID();
+  const templates = ['LAN', 'WIFI', 'CAMERA'].map(category => ({ id: category === 'LAN' ? templateId : randomUUID(),
+    category, isActive: true, revision: 1, items: [{ code: 'LABEL', title: 'Nhãn', instruction: 'Kiểm tra nhãn', sortOrder: 1 }] }));
+  let writes = 0;
+  const sheet = { code: INSPECTIONS[0].code, title: 'User edit', systemId, areaId: randomUUID(), deviceId: null,
+    templateId, templateRevision: 1, items: [] };
+  let inspections = [sheet];
+  const asManager = async (method, route) => {
+    if (method !== 'GET') { writes++; throw new Error('unexpected write'); }
+    if (route === '/checklist-templates') return templates;
+    if (route.endsWith('/inspections')) return inspections;
+    if (route.endsWith('/acceptances') || route.endsWith('/tasks')) return [];
+    throw new Error(`unexpected read: ${route}`);
+  };
+  const input = { root: '/projects/demo', project: { code: 'CT-DEMO-ELV-01' },
+    areas: [{ code: 'T01-SANH', id: sheet.areaId }], systems: [{ code: 'LAN-BUILDING', id: systemId }],
+    devices: [], manager: { user: { id: randomUUID() } }, technician: { user: { id: randomUUID() } },
+    asManager, asTechnician: () => { writes++; }, preflightOnly: true };
+  await assert.rejects(seedWorkflow(input), /Inspection .*conflicts/);
+  assert.equal(writes, 0);
+  inspections = [];
+  await assert.doesNotReject(seedWorkflow(input));
+  assert.equal(writes, 0);
+});
+
+test('evidence fixture comparison includes bytes, media metadata, target and uploader', () => {
+  const { matchesEvidence, PNG } = require('../scripts/seed-demo-workflow.cjs');
+  const { createHash } = require('node:crypto');
+  const taskId = randomUUID(), uploaderId = randomUUID();
+  const row = { sha256: createHash('sha256').update(PNG).digest('hex'), sizeBytes: PNG.length,
+    mimeType: 'image/png', caption: 'Minh chứng giả định cho công trình demo', taskId, uploadedBy: { id: uploaderId } };
+  assert.equal(matchesEvidence(row, PNG, 'image/png', 'taskId', taskId, uploaderId), true);
+  for (const changed of [{ sizeBytes: PNG.length + 1 }, { mimeType: 'application/pdf' },
+    { caption: 'User edit' }, { taskId: randomUUID() }, { uploadedBy: { id: randomUUID() } }]) {
+    assert.equal(matchesEvidence({ ...row, ...changed }, PNG, 'image/png', 'taskId', taskId, uploaderId), false);
+  }
+});

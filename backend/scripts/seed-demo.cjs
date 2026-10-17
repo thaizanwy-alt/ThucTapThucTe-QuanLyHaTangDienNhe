@@ -2,6 +2,7 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const dotenv = require('dotenv');
+const { seedWorkflow } = require('./seed-demo-workflow.cjs');
 
 const PROJECT_CODE = 'CT-DEMO-ELV-01';
 const MARKER = 'DEMO_SEED:ELV-BUILDING-V1 (fictional training data)';
@@ -13,7 +14,8 @@ const TASK_SPECS = [
   { code: 'TASK-LAN-ASSIGNED', title: 'Gắn nhãn ổ mạng sảnh', systemCode: 'LAN-BUILDING', areaCode: 'T01-SANH', status: 'ASSIGNED' },
   { code: 'TASK-WIFI-STARTED', title: 'Lắp AP tầng 2', systemCode: 'WIFI-BUILDING', areaCode: 'T02-VP', status: 'IN_PROGRESS' },
   { code: 'TASK-CAM-SUBMITTED', title: 'Kiểm tra camera sảnh', systemCode: 'CAMERA-BUILDING', areaCode: 'T01-SANH', status: 'SUBMITTED' },
-  { code: 'TASK-CAM-RETURNED', title: 'Khắc phục nhãn camera tầng 2', systemCode: 'CAMERA-BUILDING', areaCode: 'T02-VP', status: 'RETURNED' },
+  // The original TASK-CAM-RETURNED may have been edited during a demo. Never advance it.
+  { code: 'TASK-CAM-RETURNED-V2', title: 'Kiểm tra lại nhãn camera tầng 2', systemCode: 'CAMERA-BUILDING', areaCode: 'T02-VP', status: 'RETURNED' },
   { code: 'TASK-LAN-APPROVED', title: 'Đấu dây mạng lễ tân', systemCode: 'LAN-BUILDING', areaCode: 'T01-SANH', status: 'APPROVED' },
 ];
 const DEVICE_SPECS = [
@@ -346,10 +348,20 @@ async function main({ envOverride = {}, fetchImpl = fetch } = {}) {
   const technician = await login(env.DEMO_TECHNICIAN_EMAIL || 'technician.demo@example.local', env.DEMO_TECHNICIAN_PASSWORD, 'TECHNICIAN');
   const active = await call('GET', '/users/technicians', undefined, manager.token);
   if (!active.some(user => user.id === technician.user.id)) throw new Error('Demo technician is not active; seed stopped.');
+  const secondConfigured = Boolean(env.DEMO_SECOND_TECHNICIAN_EMAIL || env.DEMO_SECOND_TECHNICIAN_PASSWORD);
+  if (secondConfigured && (!env.DEMO_SECOND_TECHNICIAN_EMAIL || !env.DEMO_SECOND_TECHNICIAN_PASSWORD)) {
+    throw new Error('Set both DEMO_SECOND_TECHNICIAN_EMAIL and DEMO_SECOND_TECHNICIAN_PASSWORD, or neither; no account was changed.');
+  }
+  const secondTechnician = secondConfigured
+    ? await login(env.DEMO_SECOND_TECHNICIAN_EMAIL, env.DEMO_SECOND_TECHNICIAN_PASSWORD, 'TECHNICIAN') : null;
+  if (secondTechnician && (secondTechnician.user.id === technician.user.id || !active.some(user => user.id === secondTechnician.user.id))) {
+    throw new Error('Second demo technician must be a different active account; no account was changed.');
+  }
   const asManager = (method, route, body) => call(method, route, body, manager.token);
   const asTechnician = (method, route, body) => call(method, route, body, technician.token);
   const created = { project: 0, areas: 0, systems: 0, devices: 0, ports: 0, connections: 0, profiles: 0, tasks: 0,
-    taskTransitions: 0, rackUpdates: 0, placements: 0 };
+    taskTransitions: 0, rackUpdates: 0, placements: 0, inspections: 0, itemResults: 0, issueTransitions: 0,
+    evidence: 0, acceptances: 0, confirmations: 0, softDeletes: 0 };
 
   const projects = await asManager('GET', '/projects');
   let project = projects.find(item => item.code === PROJECT_CODE);
@@ -401,6 +413,8 @@ async function main({ envOverride = {}, fetchImpl = fetch } = {}) {
   assertLayoutPreflight(areas, devices, racksBefore, layoutsBefore);
   await preflightExistingDependents(route => asManager('GET', route), root, project.id, areas, systems, devices,
     technician.user.id, manager.user.id);
+  await seedWorkflow({ root, project, areas, systems, devices, manager, technician,
+    asManager, asTechnician, fetchImpl, apiOrigin: base, created, preflightOnly: true });
   const ensure = async (rows, key, route, body, counter, check) => {
     let item = rows.find(value => value.code === key);
     if (item) { check(item); return item; }
@@ -556,6 +570,8 @@ async function main({ envOverride = {}, fetchImpl = fetch } = {}) {
     systemId: systems.find(item => item.code === spec.systemCode).id,
     areaId: areas.find(item => item.code === spec.areaCode).id,
   }));
+  const legacyTask = (await asManager('GET', `${root}/tasks`)).find(item => item.code === 'TASK-CAM-RETURNED');
+  if (legacyTask) console.error(`Demo fixture TASK-CAM-RETURNED is preserved at ${legacyTask.status}; it is not managed by this seed revision.`);
   const tasks = await seedDemoTasks({ root, projectId: project.id, taskDefinitions,
     technicianId: technician.user.id, managerId: manager.user.id, asManager, asTechnician, created });
 
@@ -568,6 +584,8 @@ async function main({ envOverride = {}, fetchImpl = fetch } = {}) {
   if (traces['OUT-LOBBY'][0]?.complete !== true || traces['CAM-DIRECT'][0]?.complete !== true ||
     traces['CAM-OUTLET'][0]?.complete !== true || traces['CAM-PANEL'][0]?.complete !== true ||
     traces['OUT-PENDING'][0]?.complete !== false) throw new Error('Demo trace verification failed.');
+  const workflow = await seedWorkflow({ root, project, areas, systems, devices, manager, technician,
+    asManager, asTechnician, fetchImpl, apiOrigin: base, created });
   const layouts = {};
   for (const spec of RACK_LAYOUT) {
     const layout = await asManager('GET', `${root}/racks/${fixtureDevices[spec.code].id}/layout`);
@@ -579,9 +597,10 @@ async function main({ envOverride = {}, fetchImpl = fetch } = {}) {
   }
   const counts = { areas: areas.length, systems: systems.length, devices: devices.length, ports: [...portCache.values()].reduce((n, rows) => n + rows.length, 0),
     connections: connections.length, profiles: 4, tasks: tasks.length };
-  console.log(JSON.stringify({ projectCode: project.code, projectId: project.id, created, counts, layouts, traces }));
+  console.log(JSON.stringify({ projectCode: project.code, projectId: project.id, secondTechnician: secondTechnician ? 'verified' : 'not_configured',
+    created, counts, layouts, traces, workflow }));
 }
 
 if (require.main === module) main().catch(error => { console.error(error.message); process.exitCode = 1; });
 module.exports = { main, requireManagedProject, assertDeviceFixture, preflightExistingDevices, assertLayoutPreflight,
-  preflightExistingDependents, assertTaskCheckpoint, seedDemoTasks, DEVICE_SPECS, RACK_LAYOUT, PLACEMENT, PROJECT_CODE, MARKER };
+  preflightExistingDependents, assertTaskCheckpoint, seedDemoTasks, DEVICE_SPECS, RACK_LAYOUT, PLACEMENT, TASK_SPECS, PROJECT_CODE, MARKER };

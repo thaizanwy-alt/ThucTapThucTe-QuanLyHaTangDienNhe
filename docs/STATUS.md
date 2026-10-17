@@ -1,13 +1,32 @@
 # Trạng thái bàn giao
 
-Cập nhật ngày 16/10/2026. Hướng dẫn cài/chạy: [README.md](../README.md).
+Cập nhật ngày 17/10/2026. Hướng dẫn cài/chạy: [README.md](../README.md).
+
+## Fixture CT-DEMO-ELV-01 hiện tại (17/10)
+
+Chạy `npm run seed:checklists -w backend` (nếu cài máy mới), khởi động backend rồi chạy `npm run seed:demo -w backend`. Script chỉ ghi qua API vào Project có marker `DEMO_SEED:ELV-BUILDING-V1`; preflight mã/field và checkpoint, dừng khi fixture do người dùng sửa lệch kỳ vọng. Cần mật khẩu hai tài khoản demo trong môi trường local; không ghi bí mật vào repo. `DEMO_SECOND_TECHNICIAN_EMAIL` và `DEMO_SECOND_TECHNICIAN_PASSWORD` là cặp tùy chọn để xác minh tài khoản TECHNICIAN active thứ hai đã tồn tại, không tạo/reset tài khoản.
+
+| Tra cứu trong UI/API | Mã và trạng thái fixture |
+| --- | --- |
+| Cấu trúc/thiết bị | 6 Area, 3 System LAN/WIFI/CAMERA, 21 Device, RACK-CORE MAIN 42U/RACK-T02 SUB 24U; PDU-CORE ZERO_U, SHELF-CORE/ODF-T02 chưa xếp. Giữ nguyên 16 port, 10 dây và U cũ. |
+| Đường đi | CAM-DIRECT, CAM-PANEL, CAM-OUTLET và OUT-LOBBY complete; OUT-PENDING thiếu đoạn. `complete` chỉ là hồ sơ khai báo đến switch. |
+| Công việc | TASK-LAN-ASSIGNED, TASK-WIFI-STARTED, TASK-CAM-SUBMITTED, TASK-CAM-RETURNED-V2, TASK-LAN-APPROVED; DEMO-TASK-EVIDENCE-LOCKED APPROVED có ảnh active. TASK-CAM-RETURNED cũ thực tế IN_PROGRESS, được báo là fixture thay đổi và **không bị seed chuyển trạng thái/reset**. |
+| Kiểm tra/lỗi | DEMO-INSP-LAN-PASS (3 PASS), DEMO-INSP-WIFI-NOTCHECK (3 NOT_CHECKED), DEMO-INSP-CAM-OPEN/STARTED/RESOLVED (mỗi phiếu 1 FAIL + 2 NOT_CHECKED), DEMO-INSP-CAM-CLOSED (3 PASS, giữ lịch sử lỗi CLOSED). Bốn lỗi lần lượt OPEN/IN_PROGRESS/RESOLVED/CLOSED. |
+| Minh chứng | `demo-archived.png` đã xóa mềm sau khi ghim; `demo-current.pdf`, `demo-closed-issue.png`, `demo-approved-task.png` active. Issue CLOSED và Task APPROVED còn file đọc được nhưng khóa ghi theo backend. Đây là ảnh/PDF giả định, không phải hồ sơ công trường thật. |
+| Nghiệm thu | DEMO-AC-BLOCKED DRAFT có blockers; DEMO-AC-READY DRAFT đủ điều kiện; DEMO-AC-CONFIRMED-V1 → V2 → V3 đều CONFIRMED, replacement chỉ có hiệu lực sau confirm. V1 có file ghim đã xóa mềm ở nguồn; PDF/ZIP vẫn lấy được. |
+
+DB local đúng cluster `7628257575938021648`, 13 migration: demo hiện có 7 Task, 6 phiếu/18 mục, 4 Issue, 4 Evidence (3 active, 1 xóa mềm), 5 Acceptance/3 snapshot. Lần chạy đầu của seed mới dừng giữa chuỗi replacement do lỗi giữ state predecessor; sau sửa, chạy tiếp thành công. Các lần chạy lại, gồm sau bản sửa preflight/metadata evidence, có **mọi bộ đếm tạo/chuyển trạng thái bằng 0**. Preflight phần workflow hiện chạy trước thao tác ghi của seed nền; fixture lệch phải dừng trước khi ghi. GET trace/rack được seed xác nhận; API thật tải PDF 200 và ZIP 200, mở ZIP/đối chiếu manifest SHA-256 của 4 artifact đạt. Unit seed 15/15, backend 39/39, frontend export 2/2 và build toàn repo exit 0. Dùng `node frontend/test/exports.demo.browser.cjs` để smoke chỉ đọc export trên fixture demo (cần API/Vite, Playwright/Chrome và credential local); wrapper chọn tường minh Project `CT-DEMO-ELV-01` và hồ sơ `DEMO-AC-CONFIRMED-V1`, không cần UUID local, không sửa Project thử khác.
+
+Chrome smoke đầy đủ đã đạt sau khi cô lập chỗ chờ ở bước test click nút disabled và đóng dialog trước khi điều hướng. Browser tải PDF, ZIP và hai XLSX từ API thật, đối chiếu mã Project/hồ sơ, sheet và manifest/hash ZIP; kiểm tra DRAFT không có nút ZIP, hồ sơ lịch sử, TECHNICIAN không có nút và API từ chối 403, response muộn không tải file, object URL được thu hồi và không tràn ngang ở 390 px. Các lỗi 403/404/409/413/503/504, gồm Retry-After, được thử bằng route **giả lập**; chưa tạo lỗi bận/timeout/file ghim hỏng trên API thật. Backend CORS đã expose `Content-Disposition`/`Retry-After` và header được xác nhận trên `/health` local. Chưa kiểm tra trực quan screenshot hoặc toàn bộ thao tác bàn phím.
+
+Giới hạn còn lại: mới có **một** TECHNICIAN active; chưa kiểm thử giao lại giữa hai người. Chưa dọn bất kỳ Project thử hoặc file disk nào. Các mốc/số liệu ở các mục dưới là lịch sử từng chặng, không phải snapshot hiện tại của CT-DEMO-ELV-01.
 
 ## Phạm vi
 
 - Nghiệm thu có backend/frontend theo từng ProjectSystem: DRAFT → CONFIRMED, snapshot bất biến qua API và file ghim; sửa sai bằng replacement từ bản xác nhận mới nhất. TECHNICIAN chỉ đọc tóm tắt CONFIRMED, không đọc file/snapshot chi tiết. MANAGER có thể tải PDF hồ sơ CONFIRMED và Excel danh mục thiết bị/đấu nối; chưa có ZIP hoặc chữ ký; không tự đổi Project.status.
 - Evidence có backend và component frontend dùng chung trong chi tiết Task/InspectionItem/RemediationIssue. File local ngoài repo, JWT/ownership, xóa mềm giữ disk; không purge hoặc quét mã độc. Giới hạn smoke TECHNICIAN được ghi bên dưới.
 - Project/Area/System, Task và danh mục Device đã có backend/frontend. Cổng/kết nối và hồ sơ mạng khai báo đã có backend cùng giao diện frontend; chưa có sơ đồ mạng.
-- Checklist và lỗi khắc phục đã có backend/frontend; migration và seed mẫu đã xác minh trên DB local đúng. Chưa mở rộng fixture checklist cho CT-DEMO-ELV-01.
+- Checklist và lỗi khắc phục đã có backend/frontend; migration, seed mẫu và fixture checklist CT-DEMO-ELV-01 đã xác minh trên DB local đúng.
 
 ## Đã triển khai
 
@@ -143,3 +162,9 @@ Các kiểm tra frontend Device đã thực hiện ở chặng trước:
 - Ghi chú lịch sử: cách hủy truy vấn bằng PID của lượt trước đã được thay bằng timeout server; kết quả kiểm thử hiện hành ghi ở bullet regression mới.
 - Xác minh hoàn tất 2026-10-17: `npm run test:exports:db -w backend` đạt 26/26; `npm run test -w backend` đạt 39/39; `npm run build` toàn repo exit code 0. Test PDF dùng Python tích hợp có `pdfplumber`/`pypdf`; DB test chỉ tạo/xóa `exports_test_*` và storage tạm. Chưa chạy migration/seed hoặc ghi DB local/demo. Audit registry mới nhất vẫn không truy cập được; audit 0 vulnerability khi cài là kết quả lịch sử, không phải audit mới. `git diff --check` chạy sau sửa. Chưa stage/commit/push.
 - Lịch sử xác minh trước thay đổi 2026-10-17: cluster/test cũ và kết quả dùng PID signaling ở trên không mô tả cơ chế hiện tại.
+
+### Frontend ZIP bàn giao — 2026-10-17
+
+- Trong chi tiết hồ sơ `CONFIRMED`, MANAGER có nút “Tải gói bàn giao ZIP”; giữ nút PDF và ba nút Excel hiện có, không thêm thẻ tổng quan. Tải qua API client dùng Bearer + Blob, fallback tên `.zip`, chặn click lặp và hủy request khi đóng dialog/đổi hồ sơ. Nội dung giải thích ZIP gồm PDF snapshot, hai Excel dữ liệu hiện tại và minh chứng ghim. `503` có `Retry-After` hiển thị thời gian chờ để người dùng tự thử lại; `504`, `413` và `409` file ghim/hồ sơ được nêu riêng.
+- `node --test --test-reporter=spec frontend/test/exports.test.cjs`: 2/2; `node --check frontend/test/exports.browser.cjs` đạt; `npm run build` toàn repo exit code 0; `git diff --check` đạt sau chỉnh sửa. Unit test xác nhận URL, Bearer, Blob/tên `.zip` an toàn và phản hồi JSON giả lập 409/413/503/504.
+- Ghi chú lịch sử: ở lượt triển khai UI ban đầu, browser smoke chưa chạy vì backend/Playwright chưa sẵn. Kết quả Chrome/API thật mới nhất và ranh giới route giả lập được ghi ở mục fixture phía trên. Không tạo/sửa dữ liệu demo bằng smoke; chưa kiểm tra trực quan screenshot.
