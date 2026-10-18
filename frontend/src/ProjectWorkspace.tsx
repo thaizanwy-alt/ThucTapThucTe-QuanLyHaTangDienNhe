@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
-import { ApiError } from './api/client';
+import { ApiError, sessionIdFor } from './api/client';
 import {
   createArea, createProject, createSystem, deleteArea, deleteSystem, listAreas, listProjects,
   listSystems, updateArea, updateProject, updateSystem,
@@ -17,6 +17,8 @@ import InspectionWorkspace from './InspectionWorkspace';
 import './workspace.css';
 import { useDialogFocus } from './useDialogFocus';
 import { ListPreferences } from './ListView';
+import ProjectSummary from './ProjectSummary';
+import type { SummaryGroup } from './summary-navigation';
 const sections = { overview: 'Tổng quan', structure: 'Khu vực & hệ thống', devices: 'Thiết bị', tasks: 'Công việc', connections: 'Đấu nối & tra cứu', inspections: 'Kiểm tra', racks: 'Sơ đồ tủ' } as const;
 type Section = keyof typeof sections;
 
@@ -145,17 +147,18 @@ export default function ProjectWorkspace({ token, user, onSignOut, onManageAccou
   const [systems, setSystems] = useState<ProjectSystem[]>([]);
   const [deviceRevision, setDeviceRevision] = useState(0);
   const [section, setSection] = useState<Section>('overview');
+  const [summaryGroup, setSummaryGroup] = useState<SummaryGroup | undefined>();
   const contentRef = useRef<HTMLDivElement>(null);
   const [sectionWarning, setSectionWarning] = useState('');
   const rackScreen = section === 'racks';
-  function navigate(next: Section) {
+  function navigate(next: Section, group?: SummaryGroup) {
     if (contentRef.current?.querySelector('[role="dialog"], [aria-busy="true"]')) { setSectionWarning('Hãy đóng hộp thoại hoặc chờ thao tác đang thực hiện trước khi chuyển mục.'); return; }
     const warning = Array.from(contentRef.current?.querySelectorAll('[role="alert"], .connection-warning') ?? []).map(node => node.textContent).join(' ');
     if (warning) setSectionWarning(`${sections[section]}: ${warning}. Mở lại mục để tải mới bằng GET.`);
     if (next === 'structure' && selectedId) void refreshDetail(selectedId);
-    setSection(next);
+    setSummaryGroup(group); setSection(next);
   }
-  useEffect(() => { setSection('overview'); setSectionWarning(''); }, [selectedId]);
+  useEffect(() => { setSection('overview'); setSummaryGroup(undefined); setSectionWarning(''); }, [selectedId]);
   useEffect(() => { (section === 'overview' ? document.querySelector<HTMLElement>('.overview-links button') : document.getElementById('function-title'))?.focus(); }, [section]);
   const [loadedDetailId, setLoadedDetailId] = useState<string | null>(null);
   const [loadingProjects, setLoadingProjects] = useState(true);
@@ -379,9 +382,9 @@ export default function ProjectWorkspace({ token, user, onSignOut, onManageAccou
                 </li>)}</ul>}
               </section>
             </div>}
-            {detailReady && section === 'overview' && <div className="overview-info"><div className="overview-links" aria-label="Chức năng công trình">{Object.entries(sections).filter(([key]) => key !== 'overview').map(([key, label]) => <button key={key} onClick={() => navigate(key as Section)}><strong>{label}</strong><small>{key === 'structure' ? `${areas.length} khu vực · ${systems.length} hệ thống` : `Mở hồ sơ ${label.toLowerCase()}`}</small></button>)}</div></div>}
-            {detailReady && section === 'tasks' && <TaskPanel key={selectedProject.id} token={token} user={user} projectId={selectedProject.id} systems={systems} areas={areas} onSignOut={onSignOut} />}
-            {detailReady && section === 'inspections' && <InspectionWorkspace key={`inspections:${selectedProject.id}`} token={token} user={user} projectId={selectedProject.id} systems={systems} areas={areas} deviceRevision={deviceRevision} onSignOut={onSignOut} />}
+            {section === 'overview' && <ProjectSummary key={`${selectedProject.id}:${sessionIdFor(token)}`} token={token} user={user} projectId={selectedProject.id} onOpen={({ section: next, group }) => navigate(next, group)}>{inventory => <div className="overview-info"><div className="overview-links" aria-label="Chức năng công trình">{Object.entries(sections).filter(([key]) => key !== 'overview').map(([key, label]) => <button key={key} onClick={() => navigate(key as Section)}><strong>{label}</strong><small>{inventory && key === 'structure' ? `${inventory.areas.total} khu vực · ${inventory.systemsTotal} hệ thống` : inventory && key === 'devices' ? `${inventory.devicesTotal} thiết bị (đã gồm tủ rack)` : inventory && key === 'racks' ? `${inventory.racks.total} tủ · ${inventory.racks.main} MAIN · ${inventory.racks.sub} SUB · ${inventory.racks.unclassified} chưa phân loại` : `Mở hồ sơ ${label.toLowerCase()}`}</small></button>)}</div></div>}</ProjectSummary>}
+            {detailReady && section === 'tasks' && <TaskPanel key={selectedProject.id} token={token} user={user} projectId={selectedProject.id} systems={systems} areas={areas} initialGroup={summaryGroup} onSignOut={onSignOut} />}
+            {detailReady && section === 'inspections' && <InspectionWorkspace key={`inspections:${selectedProject.id}`} token={token} user={user} projectId={selectedProject.id} systems={systems} areas={areas} deviceRevision={deviceRevision} initialGroup={summaryGroup} onSignOut={onSignOut} />}
             {detailReady && section === 'devices' && <DevicePanel key={`devices:${selectedProject.id}`} token={token} user={user} projectId={selectedProject.id} systems={systems} areas={areas} onSignOut={onSignOut} onDeviceChanged={onDeviceChanged} />}
             {detailReady && section === 'connections' && <ConnectionPanel key={`connections:${selectedProject.id}`} token={token} user={user} projectId={selectedProject.id} deviceRevision={deviceRevision} onSignOut={onSignOut} />}
             </div></ListPreferences>

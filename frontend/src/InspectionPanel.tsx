@@ -13,9 +13,11 @@ import { inspectionPayload, InspectionRequestGate, issueActions, issueLabels, re
 import type { InspectionDraft } from './inspection-form';
 import './inspection.css';
 import ListView from './ListView';
+import { inspectionGroups, issueGroups } from './summary-navigation';
+import type { SummaryGroup } from './summary-navigation';
 import EvidencePanel from './EvidencePanel';
 
-interface Props { token: string; user: User; projectId: string; areas: ProjectArea[]; systems: ProjectSystem[]; deviceRevision: number; onSignOut: () => void }
+interface Props { token: string; user: User; projectId: string; areas: ProjectArea[]; systems: ProjectSystem[]; deviceRevision: number; onSignOut: () => void; initialGroup?: SummaryGroup }
 interface Snapshot { scope: string; sheets: Inspection[]; issues: IssueDetail[]; templates: ChecklistTemplate[]; devices: ProjectDevice[]; technicians: Technician[] }
 type Editor = { kind: 'create' } | { kind: 'sheet'; sheet: Inspection } | { kind: 'issue'; issue: IssueDetail }
   | { kind: 'result' | 'item'; sheetId: string; item: ItemDetail } | { kind: 'assign' | 'recheck' | 'resolve' | 'start'; issue: IssueDetail };
@@ -91,14 +93,14 @@ function IssueForm({ editor, technicians, busy, submit }: { editor: Extract<Edit
   </form>;
 }
 
-export default function InspectionPanel({ token, user, projectId, areas, systems, deviceRevision, onSignOut }: Props) {
+export default function InspectionPanel({ token, user, projectId, areas, systems, deviceRevision, onSignOut, initialGroup }: Props) {
   const manager = user.role === 'MANAGER'; const scope = JSON.stringify([projectId, deviceRevision]);
   const scopeRef = useRef(scope); scopeRef.current = scope;
   const mounted = useRef(true);
   const gate = useRef(new InspectionRequestGate());
   const [snapshot, setSnapshot] = useState<Snapshot | null>(null); const data = snapshot?.scope === scope ? snapshot : null;
   const [loading, setLoading] = useState(true); const [error, setError] = useState(''); const [notice, setNotice] = useState('');
-  const [busy, setBusy] = useState(false); const [editor, setEditor] = useState<Editor | null>(null); const [formError, setFormError] = useState(''); const [conflict, setConflict] = useState(false); const [tab, setTab] = useState<'sheets' | 'issues'>('sheets');
+  const [busy, setBusy] = useState(false); const [editor, setEditor] = useState<Editor | null>(null); const [formError, setFormError] = useState(''); const [conflict, setConflict] = useState(false); const [tab, setTab] = useState<'sheets' | 'issues'>(initialGroup === 'notClosed' ? 'issues' : 'sheets');
   const refresh = useCallback(async (failure = '') => {
     const request = gate.current.begin(); setLoading(true); setSnapshot(null); setError('');
     try {
@@ -156,8 +158,8 @@ export default function InspectionPanel({ token, user, projectId, areas, systems
     {error && <div role="alert" className="error-note">{error}<button className="retry-inline" onClick={() => void refresh()}>Tải lại hồ sơ</button></div>}
     {loading ? <p role="status">Đang tải hồ sơ kiểm tra…</p> : !data ? <p>Dữ liệu cũ đã ẩn. Thử tải lại bằng GET; không gửi lại thao tác lưu.</p> : manager && tab === 'sheets' ? <>
       {!data.sheets.length && <div className="empty-panel"><h4>Chưa có phiếu kiểm tra</h4><p>Chọn System và mẫu để ghi nhận kết quả thực tế.</p></div>}
-      <ListView container="div" rows={data.sheets} label="phiếu" className="inspection-list" text={s => `${s.code} ${s.title} ${context(s)}`} kind={s => s.passed ? 'Đạt' : 'Chưa đạt'}>{sheet => <button className="inspection-sheet" key={sheet.id} onClick={() => open({ kind: 'sheet', sheet })}><strong>{sheet.code} — {sheet.title}</strong><span>{context(sheet)}</span><span>{sheet.passed ? 'Phiếu đạt' : 'Phiếu chưa đạt'} · {sheet.summary.pass}/{sheet.summary.total} mục đạt · {sheet.summary.openIssues} lỗi chưa đóng</span></button>}</ListView>
-    </> : <><p>{data.issues.length} lỗi {manager ? 'trong công trình' : 'được giao cho bạn'} (gồm lịch sử đã đóng)</p>{!data.issues.length && <div className="empty-panel">Chưa có lỗi được ghi nhận.</div>}<ListView container="div" rows={data.issues} label="lỗi" className="inspection-list" text={i => `${i.inspectionCode} ${i.item.code} ${i.description} ${context(i)}`} kind={i => issueLabels[i.status]}>{issue => <article key={issue.id} className="inspection-issue"><button className="text-button" onClick={() => open({ kind: 'issue', issue })}>{issue.inspectionCode} / {issue.item.code} — {issue.description}</button><span className={`inspection-state state-${issue.status.toLowerCase()}`}>{issueLabels[issue.status]}</span><p>{context(issue)} · {issue.assignee?.email ?? 'Tài khoản không còn trong danh sách'}</p>{actionButtons(issue)}</article>}</ListView></>}
+      <ListView container="div" rows={data.sheets} groups={inspectionGroups} initialGroup={initialGroup} label="phiếu" className="inspection-list" text={s => `${s.code} ${s.title} ${context(s)}`} kind={s => s.passed ? 'Đạt' : 'Chưa đạt'}>{sheet => <button className="inspection-sheet" key={sheet.id} onClick={() => open({ kind: 'sheet', sheet })}><strong>{sheet.code} — {sheet.title}</strong><span>{context(sheet)}</span><span>{sheet.passed ? 'Phiếu đạt' : 'Phiếu chưa đạt'} · {sheet.summary.pass}/{sheet.summary.total} mục đạt · {sheet.summary.openIssues} lỗi chưa đóng</span></button>}</ListView>
+    </> : <><p>{data.issues.length} lỗi {manager ? 'trong công trình' : 'được giao cho bạn'} (gồm lịch sử đã đóng)</p>{!data.issues.length && <div className="empty-panel">Chưa có lỗi được ghi nhận.</div>}<ListView container="div" rows={data.issues} groups={issueGroups} initialGroup={initialGroup} label="lỗi" className="inspection-list" text={i => `${i.inspectionCode} ${i.item.code} ${i.description} ${context(i)}`} kind={i => issueLabels[i.status]}>{issue => <article key={issue.id} className="inspection-issue"><button className="text-button" onClick={() => open({ kind: 'issue', issue })}>{issue.inspectionCode} / {issue.item.code} — {issue.description}</button><span className={`inspection-state state-${issue.status.toLowerCase()}`}>{issueLabels[issue.status]}</span><p>{context(issue)} · {issue.assignee?.email ?? 'Tài khoản không còn trong danh sách'}</p>{actionButtons(issue)}</article>}</ListView></>}
     {editor && data && <InspectionDialog kind={editor.kind} title={titles[editor.kind]} busy={busy} onClose={close}>
       {formError && <div className="error-note" role="alert">{formError}{conflict && <button className="retry-inline" disabled={busy} onClick={() => void refreshVersion()}>Tải lại phiên bản</button>}</div>}
       {editor.kind === 'create' && <CreateForm data={data} systems={systems} areas={areas} busy={busy || conflict} onSave={input => void write(() => createInspection(token, projectId, input))} />}

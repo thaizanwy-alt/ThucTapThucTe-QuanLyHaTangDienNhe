@@ -10,6 +10,8 @@ import type { ProjectTask, TaskInput, TaskStatus, Technician } from './api/tasks
 import ListView from './ListView';
 import { useDialogFocus } from './useDialogFocus';
 import EvidencePanel from './EvidencePanel';
+import { taskGroups } from './summary-navigation';
+import type { SummaryGroup } from './summary-navigation';
 
 interface Props {
   token: string;
@@ -18,6 +20,7 @@ interface Props {
   systems: ProjectSystem[];
   areas: ProjectArea[];
   onSignOut: () => void;
+  initialGroup?: SummaryGroup;
 }
 
 type TaskEditor = ProjectTask | 'new' | null;
@@ -131,7 +134,7 @@ function TaskNoteForm({ kind, busy, onCancel, onSave }: {
   </form>;
 }
 
-export default function TaskPanel({ token, user, projectId, systems, areas, onSignOut }: Props) {
+export default function TaskPanel({ token, user, projectId, systems, areas, onSignOut, initialGroup }: Props) {
   const manager = user.role === 'MANAGER';
   const [tasks, setTasks] = useState<ProjectTask[]>([]);
   const [technicians, setTechnicians] = useState<Technician[]>([]);
@@ -224,9 +227,10 @@ export default function TaskPanel({ token, user, projectId, systems, areas, onSi
     {manager && systems.length === 0 && <p className="task-guidance">Thêm hạng mục hệ thống trước khi giao việc.</p>}
     {notice && <div className="success-note" role="status">{notice}<button onClick={() => setNotice('')} aria-label="Đóng thông báo">×</button></div>}
     {error && <div className="error-note" role="alert">{error}{refreshFailed ? <button className="retry-inline" onClick={() => void reloadTasks()}>Tải lại công việc</button> : <button onClick={() => setError('')} aria-label="Đóng thông báo">×</button>}</div>}
-    {loading ? <div className="task-loading" role="status"><span className="spinner" />Đang tải danh sách công việc…</div> : refreshFailed ? <div className="task-unavailable">Danh sách cũ đã được ẩn để tránh thao tác lặp. Hãy tải lại công việc hoặc tải lại trang.</div> : tasks.length === 0 ?
-      <div className="empty-panel task-empty"><span className="empty-mark">✓</span><h4>{manager ? 'Chưa có công việc' : 'Bạn chưa được giao việc'}</h4><p>{manager ? 'Giao công việc đầu tiên sau khi đã có hạng mục và kỹ thuật viên.' : 'Khi được giao việc, bạn sẽ thấy công việc tại đây.'}</p>{canCreate && <button className="text-button" onClick={() => openEditor('new')}>Giao công việc đầu tiên</button>}</div> :
-      <ListView rows={tasks} label="công việc" className="task-list" text={t => `${t.code} ${t.title} ${systemName(t.systemId)} ${areaName(t.areaId)} ${assigneeName(t.assigneeId)}`} kind={t => statusLabels[t.status]}>{task => <li className={`task-row task-status-${task.status.toLowerCase()}`} key={task.id}>
+    {!loading && !refreshFailed && tasks.length === 0 &&
+      <div className="empty-panel task-empty"><span className="empty-mark">✓</span><h4>{manager ? 'Chưa có công việc' : 'Bạn chưa được giao việc'}</h4><p>{manager ? 'Giao công việc đầu tiên sau khi đã có hạng mục và kỹ thuật viên.' : 'Khi được giao việc, bạn sẽ thấy công việc tại đây.'}</p>{canCreate && <button className="text-button" onClick={() => openEditor('new')}>Giao công việc đầu tiên</button>}</div>}
+    {loading ? <div className="task-loading" role="status"><span className="spinner" />Đang tải danh sách công việc…</div> : refreshFailed ? <div className="task-unavailable">Danh sách cũ đã được ẩn để tránh thao tác lặp. Hãy tải lại công việc hoặc tải lại trang.</div> :
+      <ListView rows={tasks} groups={taskGroups} initialGroup={initialGroup} label="công việc" className="task-list" text={t => `${t.code} ${t.title} ${systemName(t.systemId)} ${areaName(t.areaId)} ${assigneeName(t.assigneeId)}`} kind={t => statusLabels[t.status]}>{task => <li className={`task-row task-status-${task.status.toLowerCase()}`} key={task.id}>
         <div className="task-main"><div className="task-title"><span className="task-code">{task.code}</span><h4>{task.title}</h4></div><span className="task-state">{statusLabels[task.status]}</span></div>
         <div className="task-meta"><span><strong>Hạng mục</strong>{systemName(task.systemId)}</span><span><strong>Khu vực</strong>{areaName(task.areaId)}</span>{manager && <span><strong>Kỹ thuật viên</strong>{assigneeName(task.assigneeId)}</span>}</div>
         <button className="text-button" onClick={() => setViewed(task)}>Xem chi tiết</button>

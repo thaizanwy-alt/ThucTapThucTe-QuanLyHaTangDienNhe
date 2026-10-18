@@ -56,17 +56,18 @@ async function run() {
         const json = (status, body, headers = {}) => route.fulfill({ status, contentType: 'application/json', headers, body: JSON.stringify(body) });
         const areaMatch = p.match(/^\/projects\/[^/]+\/areas$/);
         const systemMatch = p.match(/^\/projects\/[^/]+\/systems$/);
+        const summaryMatch = p.match(/^\/projects\/([^/]+)\/summary$/);
         const resetMatch = p.match(/^\/users\/technicians\/[^/]+\/password-reset$/);
         const statusMatch = p.match(/^\/users\/technicians\/[^/]+\/status$/);
         const knownPath = p === '/auth/login' || p === '/auth/me' || p === '/auth/change-password'
-          || p === '/projects' || Boolean(areaMatch || systemMatch)
+          || p === '/projects' || Boolean(areaMatch || systemMatch || summaryMatch)
           || p === '/users/technicians/manage' || p === '/users/technicians' || Boolean(resetMatch || statusMatch);
         if (method === 'OPTIONS' && knownPath) return route.fulfill({ status: 204, headers: {
           'Access-Control-Allow-Origin': webOrigin, 'Access-Control-Allow-Methods': 'GET,POST,PATCH,OPTIONS',
           'Access-Control-Allow-Headers': 'Authorization,Content-Type', 'Access-Control-Max-Age': '0',
         } });
         const knownMethod = method === 'POST' && (p === '/auth/login' || p === '/auth/change-password' || p === '/users/technicians' || Boolean(resetMatch))
-          || method === 'GET' && (p === '/auth/me' || p === '/projects' || Boolean(areaMatch || systemMatch) || p === '/users/technicians/manage')
+          || method === 'GET' && (p === '/auth/me' || p === '/projects' || Boolean(areaMatch || systemMatch || summaryMatch) || p === '/users/technicians/manage')
           || method === 'PATCH' && Boolean(statusMatch);
         if (!knownMethod) {
           unexpectedApiRequests.push(`${method} ${p}`);
@@ -88,6 +89,14 @@ async function run() {
           return json(200, []);
         }
         if (method === 'GET' && systemMatch) return json(200, []);
+        if (method === 'GET' && summaryMatch) return json(200, {
+          projectId: summaryMatch[1], readAt: new Date().toISOString(), workScope: current.role === 'MANAGER' ? 'PROJECT' : 'ASSIGNED_TO_ME',
+          tasks: { total: 0, notApproved: 0, byStatus: { ASSIGNED: 0, IN_PROGRESS: 0, SUBMITTED: 0, RETURNED: 0, APPROVED: 0 } },
+          issues: { total: 0, notClosed: 0, byStatus: { OPEN: 0, IN_PROGRESS: 0, RESOLVED: 0, CLOSED: 0 } },
+          inventory: { devicesTotal: 0, systemsTotal: 0, areas: { total: 0, floor: 0, room: 0 }, racks: { total: 0, main: 0, sub: 0, unclassified: 0 } },
+          acceptances: { confirmedCurrent: 0, superseded: 0, ...(current.role === 'MANAGER' ? { draft: 0 } : {}) },
+          ...(current.role === 'MANAGER' ? { inspections: { total: 0, passed: 0, notChecked: 0, pendingOrFailed: 0 } } : {}),
+        });
         if (method === 'GET' && p === '/users/technicians/manage') {
           if (forced) return json(403, { code: 'PASSWORD_CHANGE_REQUIRED' });
           if (holdGet) { await new Promise(r => { lateResolve = r; }); }

@@ -12,11 +12,13 @@ import { acceptanceBlob, confirmAcceptance, getAcceptance, getReadiness, listAcc
 import type { Acceptance, Readiness, Selection } from './api/acceptances';
 import { AcceptanceGate, blockerLabel, canConfirm, selectionPayload, saveAcceptanceAndRefresh } from './acceptance-form';
 import ListView from './ListView';
+import { acceptanceGroups } from './summary-navigation';
+import type { SummaryGroup } from './summary-navigation';
 import ExportDownloadButton from './ExportDownloadButton';
 import { useDialogFocus } from './useDialogFocus';
 import './inspection.css';
 import './acceptance.css';
-type Props={token:string;user:User;projectId:string;systems:ProjectSystem[];onSignOut:()=>void};
+type Props={token:string;user:User;projectId:string;systems:ProjectSystem[];onSignOut:()=>void;initialGroup?:SummaryGroup};
 type Editor={mode:'create'|'edit'|'replacement';row:Acceptance|null};
 const savedError='Đã lưu trên server nhưng chưa tải lại được, hãy tải lại trang hoặc thử lại GET. Không gửi lại thao tác ghi.';
 function Dialog({title,busy,close,children}:{title:string;busy:boolean;close:()=>void;children:ReactNode}) {
@@ -56,7 +58,7 @@ function EditorForm({editor,systems,token,projectId,busy,onSave,onUnauthorized}:
     <p className="inspection-help">Chỉ xác nhận phạm vi phiếu được chọn, không phải toàn bộ System hay công trình.</p><button className="button" disabled={busy||!sources}>{busy?'Đang lưu…':'Lưu nháp'}</button>
   </form>;
 }
-export default function AcceptancePanel({token,user,projectId,systems,onSignOut}:Props) {
+export default function AcceptancePanel({token,user,projectId,systems,onSignOut,initialGroup}:Props) {
   const manager=user.role==='MANAGER';const [rows,setRows]=useState<Acceptance[]|null>(null);const [detail,setDetail]=useState<Acceptance|null>(null);const [editor,setEditor]=useState<Editor|null>(null);const [ready,setReady]=useState<Readiness|null>(null);const [error,setError]=useState('');const [busy,setBusy]=useState(false);const [loading,setLoading]=useState(false);const [notice,setNotice]=useState('');const [preview,setPreview]=useState<string|null>(null);
   const [reading,setReading]=useState(false);
   const view=useRef<{projectId:string;id:string|null;mode:'detail'|'editor'|null}>({projectId,id:null,mode:null});
@@ -78,7 +80,7 @@ export default function AcceptancePanel({token,user,projectId,systems,onSignOut}
   return <section className="inspection-panel"><div className="panel-heading"><div><h2>Hồ sơ nghiệm thu</h2><p>Phạm vi được chọn, không tự đổi trạng thái công trình.</p></div>{manager&&<button className="button" disabled={!rows||busy} onClick={()=>beginEditor({mode:'create',row:null})}>Tạo hồ sơ</button>}</div>
     {notice&&<p role="status">{notice}</p>}{error&&!editor&&!detail&&<p className="error-note" role="alert">{error}</p>}{loading&&<p role="status">Đang tải hồ sơ…</p>}
     {!rows&&!loading&&<button className="button" onClick={()=>void refresh().catch(()=>{})}>Thử lại GET</button>}
-    {rows&&<ListView rows={rows} label="hồ sơ nghiệm thu" preferenceKey={projectId} text={r=>r.code+' '+r.title} kind={r=>r.status} className="item-list">{r=><li key={r.id}><div><strong>{r.code}</strong><p>{r.title}</p><span>{r.status==='DRAFT'?'Bản nháp':'Đã xác nhận'}{r.replacedById?' — Đã thay thế':''}</span></div><button className="button button-quiet" onClick={()=>void open(r)}>Xem hồ sơ</button></li>}</ListView>}
+    {rows&&<ListView rows={rows} groups={manager?acceptanceGroups:acceptanceGroups.filter(g=>g.value!=='draft')} initialGroup={initialGroup} label="hồ sơ nghiệm thu" preferenceKey={projectId} text={r=>r.code+' '+r.title} kind={r=>r.status} className="item-list">{r=><li key={r.id}><div><strong>{r.code}</strong><p>{r.title}</p><span>{r.status==='DRAFT'?'Bản nháp':'Đã xác nhận'}{r.replacedById?' — Đã thay thế':''}</span></div><button className="button button-quiet" onClick={()=>void open(r)}>Xem hồ sơ</button></li>}</ListView>}
     {editor&&<Dialog title={editor.mode==='replacement'?'Tạo hồ sơ thay thế':editor.mode==='edit'?'Sửa bản nháp':'Tạo hồ sơ nghiệm thu'} busy={busy} close={close}>{error&&<p className="error-note" role="alert">{error}</p>}{editor.mode==='edit'&&<button className="button button-quiet" disabled={busy} onClick={()=>void reloadEditorVersion()}>Tải phiên bản mới, giữ nội dung</button>}<EditorForm editor={editor} systems={systems} token={token} projectId={projectId} busy={busy} onSave={body=>void save(body)} onUnauthorized={onSignOut}/></Dialog>}
     {!editor&&detail&&<Dialog title={`${detail.code} — ${detail.title}`} busy={busy&&!reading} close={close}>{error&&<p className="error-note" role="alert">{error}</p>}<p>{detail.status} · {detail.replacedById?'Đã được thay thế':'Chưa có bản thay thế xác nhận'}</p><p className="inspection-help">Hồ sơ chỉ xác nhận phạm vi phiếu đã chọn. Không kết luận toàn bộ System/Project đạt nghiệm thu.</p>
       {manager&&detail.status==='CONFIRMED'&&<div className="acceptance-export"><div className="acceptance-export-actions"><ExportDownloadButton key={`${projectId}:${detail.id}:pdf`} token={token} projectId={projectId} kind="acceptance" acceptanceId={detail.id} label="Tải PDF" onSignOut={onSignOut}/><ExportDownloadButton key={`${projectId}:${detail.id}:zip`} token={token} projectId={projectId} kind="handover-package" acceptanceId={detail.id} label="Tải gói bàn giao ZIP" onSignOut={onSignOut}/></div><p className="export-context">Gói gồm PDF snapshot, hai Excel dữ liệu hiện tại và minh chứng đã ghim.</p><p className="export-context">PDF dùng snapshot lúc xác nhận; trạng thái thay thế và cảnh báo file được ghi tại lúc xuất.</p></div>}
