@@ -2,9 +2,8 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const { randomUUID, randomBytes } = require('node:crypto');
-const { Client } = require('pg');
 const { DataSource } = require('typeorm');
-const { dataSource: localSource } = require('../dist/database/data-source.js');
+const { withDisposableHttpDb } = require('./disposable-http-db.cjs');
 const { DevicesService } = require('../dist/devices/devices.service.js');
 const { ConnectionsService } = require('../dist/connections/connections.service.js');
 const { DeviceNetworkProfile } = require('../dist/devices/device-network-profile.entity.js');
@@ -18,22 +17,14 @@ const end = port => ({ portId: port.id, side: 'SINGLE' });
 
 test('Network profile and switch VLAN/PoE: PostgreSQL constraints, trace, HTTP, delete rollback and isolated migration down/up',
   { timeout: 180000 }, async t => {
-    const databaseName = 'network_test_' + randomUUID().replaceAll('-', '');
+    await withDisposableHttpDb('network', async (db, verify) => {
+    const databaseName = db.options.database;
     assert.match(databaseName, /^network_test_[a-f0-9]{32}$/);
-    const options = localSource.options;
-    const admin = new Client({ host: options.host, port: options.port, user: options.username,
-      password: options.password, database: options.database });
-    const db = new DataSource({ ...options, database: databaseName });
     const previousDatabase = process.env.DB_NAME;
-    let created = false;
-    let app;
+    let app, failure;
     try {
-      await admin.connect();
-      await admin.query('CREATE DATABASE "' + databaseName + '"');
-      created = true;
-      await db.initialize();
+      await verify();
       assert.equal(db.options.synchronize, false);
-      await db.runMigrations();
       assert.equal(await db.showMigrations(), false);
       const manager = { role: 'MANAGER' };
       const devices = new DevicesService(db);
@@ -165,17 +156,17 @@ test('Network profile and switch VLAN/PoE: PostgreSQL constraints, trace, HTTP, 
       await t.test('late delete dependency failure rolls back profile and System cleanup', async () => {
         const doomed = await createDevice('CAM-ROLLBACK', 'CAMERA', { systemIds: [system.id] });
         await profile(doomed.id, { addressMode: 'STATIC', ipAddress: null, macAddress: null });
-        await db.query(`CREATE FUNCTION network_test_block_delete() RETURNS trigger LANGUAGE plpgsql AS $$
+        await verify(); await db.query(`CREATE FUNCTION network_test_block_delete() RETURNS trigger LANGUAGE plpgsql AS $$
           BEGIN IF OLD.id = '${doomed.id}'::uuid THEN RAISE EXCEPTION 'test dependency' USING ERRCODE = '23503'; END IF; RETURN OLD; END $$`);
-        await db.query('CREATE TRIGGER network_test_block_delete BEFORE DELETE ON project_devices FOR EACH ROW EXECUTE FUNCTION network_test_block_delete()');
+        await verify(); await db.query('CREATE TRIGGER network_test_block_delete BEFORE DELETE ON project_devices FOR EACH ROW EXECUTE FUNCTION network_test_block_delete()');
         try {
           await rejectsStatus(devices.deleteDevice(project.id, doomed.id, manager), 409);
           assert.ok(await devices.getNetworkProfile(project.id, doomed.id));
           assert.equal(await db.getRepository(ProjectDeviceSystem).countBy({ projectId: project.id, deviceId: doomed.id }), 1);
           assert.ok(await devices.getDevice(project.id, doomed.id));
         } finally {
-          await db.query('DROP TRIGGER network_test_block_delete ON project_devices');
-          await db.query('DROP FUNCTION network_test_block_delete()');
+          await verify(); await db.query('DROP TRIGGER network_test_block_delete ON project_devices');
+          await verify(); await db.query('DROP FUNCTION network_test_block_delete()');
         }
       });
 
@@ -192,7 +183,7 @@ test('Network profile and switch VLAN/PoE: PostgreSQL constraints, trace, HTTP, 
         const { AppModule } = require('../dist/app.module.js');
         app = await NestFactory.create(AppModule, { logger: false });
         app.useGlobalPipes(new ValidationPipe({ whitelist: true, transform: true }));
-        await app.listen(0, '127.0.0.1');
+        await app.listen(0, '127.0.0.1'); await verify(app.get(DataSource));
         assert.equal(app.get(DataSource).options.database, databaseName);
         const base = 'http://127.0.0.1:' + app.getHttpServer().address().port;
         const headers = {};
@@ -254,38 +245,39 @@ test('Network profile and switch VLAN/PoE: PostgreSQL constraints, trace, HTTP, 
 
       await t.test('isolated down/up touches only new profile schema and port columns', async () => {
         const before = (await db.query('SELECT count(*)::int AS count FROM project_devices'))[0].count;
-        await db.undoLastMigration(); // Remove the later User security migration before testing historical down/up.
+        await verify(); await db.undoLastMigration(); // Remove the later User security migration before testing historical down/up.
         assert.equal((await db.query('SELECT name FROM migrations ORDER BY id DESC LIMIT 1'))[0].name, 'CreateProjectAcceptances1802000000000');
-        await db.undoLastMigration();
+        await verify(); await db.undoLastMigration();
         assert.equal((await db.query('SELECT name FROM migrations ORDER BY id DESC LIMIT 1'))[0].name, 'CreateEvidenceAttachments1801000000000');
-        await db.undoLastMigration();
+        await verify(); await db.undoLastMigration();
         assert.equal((await db.query('SELECT name FROM migrations ORDER BY id DESC LIMIT 1'))[0].name, 'CreateInspections1800000000000');
-        await db.undoLastMigration();
+        await verify(); await db.undoLastMigration();
         assert.equal((await db.query('SELECT name FROM migrations ORDER BY id DESC LIMIT 1'))[0].name,
           'EnforceRackServedAreaForeignKey1799000000000');
-        await db.undoLastMigration();
+        await verify(); await db.undoLastMigration();
         assert.equal((await db.query('SELECT name FROM migrations ORDER BY id DESC LIMIT 1'))[0].name,
           'EnforceRackLayoutIntegrity1798000000000');
-        await db.undoLastMigration();
+        await verify(); await db.undoLastMigration();
         assert.equal((await db.query('SELECT name FROM migrations ORDER BY id DESC LIMIT 1'))[0].name,
           'AddRackLayout1797000000000');
-        await db.undoLastMigration();
+        await verify(); await db.undoLastMigration();
         assert.equal((await db.query('SELECT name FROM migrations ORDER BY id DESC LIMIT 1'))[0].name,
           'AddDeviceNetworkProfileAndPortMetadata1796000000000');
-        await db.undoLastMigration();
+        await verify(); await db.undoLastMigration();
         assert.equal((await db.query("SELECT to_regclass('public.device_network_profiles') AS name"))[0].name, null);
         assert.equal((await db.query("SELECT count(*)::int AS count FROM information_schema.columns WHERE table_name='device_ports' AND column_name='poe_enabled'"))[0].count, 0);
         assert.equal((await db.query('SELECT count(*)::int AS count FROM project_devices'))[0].count, before);
-        await db.runMigrations();
+        await verify(); await db.runMigrations();
         assert.equal(await db.showMigrations(), false);
         assert.equal((await db.query("SELECT count(*)::int AS count FROM information_schema.columns WHERE table_name='device_ports' AND column_name='poe_enabled'"))[0].count, 1);
         assert.equal((await db.query('SELECT count(*)::int AS count FROM project_devices'))[0].count, before);
       });
-    } finally {
-      if (app) await app.close();
-      if (db.isInitialized) await db.destroy();
+    } catch (error) { failure = error; }
+    finally {
+      try { if (app) await app.close(); }
+      catch (error) { failure = failure ? new AggregateError([failure, error], 'Network app cleanup failed', { cause: failure }) : error; }
       if (previousDatabase === undefined) delete process.env.DB_NAME; else process.env.DB_NAME = previousDatabase;
-      if (created) await admin.query('DROP DATABASE "' + databaseName + '"');
-      await admin.end();
     }
+    if (failure) throw failure;
+    });
   });

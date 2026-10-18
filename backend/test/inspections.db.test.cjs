@@ -2,9 +2,8 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const { randomUUID, randomBytes } = require('node:crypto');
-const { Client } = require('pg');
 const { DataSource } = require('typeorm');
-const { dataSource: localSource } = require('../dist/database/data-source.js');
+const { withDisposableHttpDb } = require('./disposable-http-db.cjs');
 const { InspectionsService } = require('../dist/inspections/inspections.service.js');
 const { seedTemplates } = require('../dist/inspections/seed-templates.js');
 const { ChecklistTemplate, ChecklistTemplateItem, ProjectInspection, InspectionItem, RemediationIssue } = require('../dist/inspections/inspection.entities.js');
@@ -24,7 +23,7 @@ async function orderedRace(db, firstAction, secondAction) {
   const gate = new Promise(resolve => { release = resolve; });
   const prepared = new Promise((resolve, reject) => { ready = resolve; failReady = reject; });
   const settle = promise => promise.then(value => ({ value }), error => ({ error }));
-  let firstResult, secondResult;
+  let firstResult, secondResult, failure;
   const service = (runner, hold) => new InspectionsService({
     transaction: async work => {
       try {
@@ -60,26 +59,28 @@ async function orderedRace(db, firstAction, secondAction) {
     assert.equal(blocked, true, 'second transaction must actually wait for the first PostgreSQL lock');
     release();
     return [await firstResult, await secondResult];
-  } finally {
+  } catch (error) { failure = error; throw error; }
+  finally {
     release();
     if (firstResult) await firstResult;
     if (secondResult) await secondResult;
-    await first.release(); await second.release();
+    const errors = [];
+    for (const runner of [first, second]) {
+      try { if (runner.isTransactionActive) await runner.rollbackTransaction(); } catch (error) { errors.push(error); }
+      try { await runner.release(); } catch (error) { errors.push(error); }
+    }
+    if (errors.length) throw new AggregateError(failure ? [failure, ...errors] : errors, 'Inspection race cleanup failed', { cause: failure ?? errors[0] });
   }
 }
 
 test('Checklist/Issue PostgreSQL and HTTP contract', { timeout: 180000 }, async t => {
-  const name = 'inspection_test_' + randomUUID().replaceAll('-', '');
+  await withDisposableHttpDb('inspection', async (db, verify) => {
+  const name = db.options.database;
   assert.match(name, /^inspection_test_[a-f0-9]{32}$/);
-  const options = localSource.options;
-  const admin = new Client({ host: options.host, port: options.port, user: options.username, password: options.password, database: options.database });
-  const db = new DataSource({ ...options, database: name });
   const previousDb = process.env.DB_NAME, previousJwt = process.env.JWT_SECRET;
-  let created = false, app;
+  let app, failure;
   try {
-    await admin.connect();
-    await admin.query(`CREATE DATABASE "${name}" TEMPLATE template0 ENCODING 'UTF8' LC_COLLATE 'C' LC_CTYPE 'C'`); created = true;
-    await db.initialize(); await db.runMigrations();
+    await verify();
     assert.equal(db.options.synchronize, false); assert.equal(await db.showMigrations(), false);
     const svc = new InspectionsService(db);
     const users = db.getRepository(User);
@@ -145,10 +146,10 @@ test('Checklist/Issue PostgreSQL and HTTP contract', { timeout: 180000 }, async 
       await rejects(put(item, 'FAIL'), 400);
       await rejects(put(item, 'FAIL', { issue: { description: 'Cable', assigneeId: inactive.id } }), 409);
       await rejects(put(item, 'FAIL', { issue: { description: 'Cable', assigneeId: manager.id } }), 409);
-      await db.query(`CREATE FUNCTION inspection_test_failure() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'test rollback' USING ERRCODE='23503'; END $$`);
-      await db.query('CREATE TRIGGER inspection_test_failure BEFORE UPDATE ON inspection_items FOR EACH ROW EXECUTE FUNCTION inspection_test_failure()');
+      await verify(); await db.query(`CREATE FUNCTION inspection_test_failure() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'test rollback' USING ERRCODE='23503'; END $$`);
+      await verify(); await db.query('CREATE TRIGGER inspection_test_failure BEFORE UPDATE ON inspection_items FOR EACH ROW EXECUTE FUNCTION inspection_test_failure()');
       try { await rejects(put(item, 'FAIL', { issue: { description: 'Cable', assigneeId: tech.id } }), 409); }
-      finally { await db.query('DROP TRIGGER inspection_test_failure ON inspection_items'); await db.query('DROP FUNCTION inspection_test_failure()'); }
+      finally { await verify(); await db.query('DROP TRIGGER inspection_test_failure ON inspection_items'); await verify(); await db.query('DROP FUNCTION inspection_test_failure()'); }
       assert.equal(await db.getRepository(RemediationIssue).countBy({ itemId: item.id }), 0);
       assert.equal((await db.getRepository(InspectionItem).findOneBy({ id: item.id })).version, 1);
     });
@@ -270,11 +271,11 @@ test('Checklist/Issue PostgreSQL and HTTP contract', { timeout: 180000 }, async 
     await t.test('PASS/CLOSED recheck is atomic; CLOSED immutable, future FAIL creates a new Issue', async () => {
       issue = await svc.startIssue(p.id, issue.id, { expectedVersion: issue.version }, tech);
       issue = await svc.resolveIssue(p.id, issue.id, { expectedVersion: issue.version, resolutionNote: 'Fixed again' }, tech);
-      await db.query(`CREATE FUNCTION inspection_test_close_failure() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN IF NEW.status='CLOSED' THEN RAISE EXCEPTION 'test rollback' USING ERRCODE='23503'; END IF; RETURN NEW; END $$`);
-      await db.query('CREATE TRIGGER inspection_test_close_failure BEFORE UPDATE ON remediation_issues FOR EACH ROW EXECUTE FUNCTION inspection_test_close_failure()');
+      await verify(); await db.query(`CREATE FUNCTION inspection_test_close_failure() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN IF NEW.status='CLOSED' THEN RAISE EXCEPTION 'test rollback' USING ERRCODE='23503'; END IF; RETURN NEW; END $$`);
+      await verify(); await db.query('CREATE TRIGGER inspection_test_close_failure BEFORE UPDATE ON remediation_issues FOR EACH ROW EXECUTE FUNCTION inspection_test_close_failure()');
       const body = { expectedVersion: issue.version, expectedItemVersion: item.version, result: 'PASS', note: 'Verified' };
       try { await rejects(svc.recheckIssue(p.id, issue.id, body, manager), 409); }
-      finally { await db.query('DROP TRIGGER inspection_test_close_failure ON remediation_issues'); await db.query('DROP FUNCTION inspection_test_close_failure()'); }
+      finally { await verify(); await db.query('DROP TRIGGER inspection_test_close_failure ON remediation_issues'); await verify(); await db.query('DROP FUNCTION inspection_test_close_failure()'); }
       assert.equal((await svc.getIssue(p.id, issue.id, manager)).item.result, 'FAIL');
       const closing = await Promise.allSettled([1, 2].map(() => svc.recheckIssue(p.id, issue.id, body, manager)));
       assert.equal(closing.filter(r => r.status === 'fulfilled').length, 1);
@@ -332,7 +333,7 @@ test('Checklist/Issue PostgreSQL and HTTP contract', { timeout: 180000 }, async 
       const { JwtService } = require('@nestjs/jwt');
       const { AppModule } = require('../dist/app.module.js');
       app = await NestFactory.create(AppModule, { logger: false });
-      app.useGlobalPipes(new ValidationPipe({ whitelist: true, transform: true })); await app.listen(0, '127.0.0.1');
+      app.useGlobalPipes(new ValidationPipe({ whitelist: true, transform: true })); await app.listen(0, '127.0.0.1'); await verify(app.get(DataSource));
       assert.equal(app.get(DataSource).options.database, name);
       const base = 'http://127.0.0.1:' + app.getHttpServer().address().port;
       const headers = {};
@@ -390,24 +391,26 @@ test('Checklist/Issue PostgreSQL and HTTP contract', { timeout: 180000 }, async 
       for (const table of ['users', 'projects', 'project_areas', 'project_systems', 'project_devices', 'project_tasks']) before[table] = await db.query(table === 'users'
         ? 'SELECT id,email,role,is_active FROM users ORDER BY id'
         : `SELECT * FROM ${table} ORDER BY id`);
-      await db.undoLastMigration(); // Remove the later User security migration before the checklist migration sequence.
+      await verify(); await db.undoLastMigration(); // Remove the later User security migration before the checklist migration sequence.
       assert.equal((await db.query('SELECT name FROM migrations ORDER BY id DESC LIMIT 1'))[0].name, 'CreateProjectAcceptances1802000000000');
-      await db.undoLastMigration();
+      await verify(); await db.undoLastMigration();
       assert.equal((await db.query('SELECT name FROM migrations ORDER BY id DESC LIMIT 1'))[0].name, 'CreateEvidenceAttachments1801000000000');
-      await db.undoLastMigration();
+      await verify(); await db.undoLastMigration();
       assert.equal((await db.query('SELECT name FROM migrations ORDER BY id DESC LIMIT 1'))[0].name, 'CreateInspections1800000000000');
-      await db.undoLastMigration();
+      await verify(); await db.undoLastMigration();
       assert.equal((await db.query("SELECT to_regclass('inspection_items') AS name"))[0].name, null);
       for (const [table, rows] of Object.entries(before)) assert.deepEqual(await db.query(table === 'users'
         ? 'SELECT id,email,role,is_active FROM users ORDER BY id'
         : `SELECT * FROM ${table} ORDER BY id`), rows);
-      await db.runMigrations(); assert.equal(await db.showMigrations(), false);
+      await verify(); await db.runMigrations(); assert.equal(await db.showMigrations(), false);
     });
-  } finally {
-    if (app) await app.close(); if (db.isInitialized) await db.destroy();
+  } catch (error) { failure = error; }
+  finally {
+    try { if (app) await app.close(); }
+    catch (error) { failure = failure ? new AggregateError([failure, error], 'Inspection app cleanup failed', { cause: failure }) : error; }
     if (previousDb === undefined) delete process.env.DB_NAME; else process.env.DB_NAME = previousDb;
     if (previousJwt === undefined) delete process.env.JWT_SECRET; else process.env.JWT_SECRET = previousJwt;
-    if (created) await admin.query(`DROP DATABASE "${name}"`);
-    await admin.end();
   }
+  if (failure) throw failure;
+  });
 });

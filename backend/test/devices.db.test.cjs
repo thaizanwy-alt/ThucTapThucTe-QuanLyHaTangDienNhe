@@ -1,7 +1,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const { randomUUID } = require('node:crypto');
-const { dataSource } = require('../dist/database/data-source.js');
+const { withDisposableHttpDb } = require('./disposable-http-db.cjs');
 const { DevicesService } = require('../dist/devices/devices.service.js');
 const { ProjectDevice } = require('../dist/devices/project-device.entity.js');
 const { DeviceType } = require('../dist/devices/device-type.enum.js');
@@ -19,12 +19,16 @@ async function expectCode(runner, sql, parameters, codes) {
   }
 }
 
-test('ProjectDevice service, composite FK and transactions run on real PostgreSQL; fixtures roll back', async t => {
-  await dataSource.initialize();
+test('ProjectDevice service, composite FK and transactions use an owned disposable PostgreSQL database', { timeout: 180000 }, async t => {
+  await withDisposableHttpDb('devices', async (dataSource, verify) => {
   const runner = dataSource.createQueryRunner();
-  await runner.connect();
+  let failure;
   try {
+    await runner.connect();
+    await verify(runner);
     await runner.startTransaction();
+    const [actor] = await runner.query('INSERT INTO users (email,password_hash,role,is_active) VALUES ($1,$2,$3,true) RETURNING id,email',
+      [`device-manager-${randomUUID()}@example.invalid`, randomUUID(), UserRole.MANAGER]);
     const suffix = randomUUID().replaceAll('-', '').toUpperCase();
     const project = async tag => (await runner.query('INSERT INTO projects (code,name) VALUES ($1,$2) RETURNING id', [`DEVICE-DB-${tag}-${suffix}`, `Device DB ${tag}`]))[0].id;
     const projectId = await project('A');
@@ -40,7 +44,7 @@ test('ProjectDevice service, composite FK and transactions run on real PostgreSQ
     const otherSystemId = await system(otherProjectId, 'LAN-01', 'LAN');
     // Service transactions use nested PostgreSQL savepoints inside this fixture transaction.
     const service = new DevicesService({ transaction: (...args) => runner.manager.transaction(...args) });
-    const manager = { role: UserRole.MANAGER };
+    const manager = { ...actor, role: UserRole.MANAGER, isActive: true };
     const create = (code, type, extra = {}, id = projectId) => service.createDevice(id, { code, name: `Device ${code}`, type, ...extra }, manager);
     const rack = await create(' rack-01 ', DeviceType.RACK, { areaId, capacityU: 42, systemIds: [lanId] });
     const otherRack = await create('RACK-01', DeviceType.RACK, {}, otherProjectId);
@@ -98,6 +102,7 @@ test('ProjectDevice service, composite FK and transactions run on real PostgreSQ
     await t.test('late FK failure rolls back device changes and deleted memberships', async () => {
       const nonexistentId = randomUUID();
       // Force a real FK failure during INSERT, after validation, device save and membership DELETE.
+      await verify(runner);
       await runner.query(`CREATE FUNCTION pg_temp.fail_device_membership() RETURNS trigger LANGUAGE plpgsql AS $$
         BEGIN
           IF NEW.project_id = '${projectId}'::uuid AND NEW.system_id = '${wifiId}'::uuid THEN
@@ -105,6 +110,7 @@ test('ProjectDevice service, composite FK and transactions run on real PostgreSQ
           END IF;
           RETURN NEW;
         END $$`);
+      await verify(runner);
       await runner.query('CREATE TRIGGER device_membership_test BEFORE INSERT ON project_device_systems FOR EACH ROW EXECUTE FUNCTION pg_temp.fail_device_membership()');
       try {
         await rejectsStatus(service.updateDevice(projectId, sw.id, { name: 'Must roll back', rackId: null, areaId, systemIds: [wifiId] }, manager), 409);
@@ -116,7 +122,9 @@ test('ProjectDevice service, composite FK and transactions run on real PostgreSQ
         await rejectsStatus(create('ROLLBACK-CREATE', DeviceType.AP, { systemIds: [wifiId] }), 409);
         assert.equal(await runner.manager.getRepository(ProjectDevice).countBy({ projectId, code: 'ROLLBACK-CREATE' }), 0);
       } finally {
+        await verify(runner);
         await runner.query('DROP TRIGGER device_membership_test ON project_device_systems');
+        await verify(runner);
         await runner.query('DROP FUNCTION pg_temp.fail_device_membership()');
       }
     });
@@ -147,9 +155,13 @@ test('ProjectDevice service, composite FK and transactions run on real PostgreSQ
       assert.deepEqual((await service.getDevice(projectId, rack.id)).systemIds, [lanId]);
       await service.deleteDevice(projectId, rack.id, manager);
     });
-  } finally {
-    if (runner.isTransactionActive) await runner.rollbackTransaction();
-    await runner.release();
-    await dataSource.destroy();
+  } catch (error) { failure = error; }
+  finally {
+    const errors = [];
+    try { if (runner.isTransactionActive) await runner.rollbackTransaction(); } catch (error) { errors.push(error); }
+    try { await runner.release(); } catch (error) { errors.push(error); }
+    if (errors.length) throw new AggregateError(failure ? [failure, ...errors] : errors, 'Device fixture cleanup failed', { cause: failure ?? errors[0] });
   }
+  if (failure) throw failure;
+  });
 });

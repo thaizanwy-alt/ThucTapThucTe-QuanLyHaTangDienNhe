@@ -2,9 +2,8 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const { randomUUID, randomBytes } = require('node:crypto');
-const { Client } = require('pg');
 const { DataSource } = require('typeorm');
-const { dataSource: localSource } = require('../dist/database/data-source.js');
+const { withDisposableHttpDb } = require('./disposable-http-db.cjs');
 const { DevicesService } = require('../dist/devices/devices.service.js');
 const { RacksService } = require('../dist/devices/racks.service.js');
 const { ConnectionsService } = require('../dist/connections/connections.service.js');
@@ -17,22 +16,14 @@ const placement = (rackId, startU, heightU, mountMode = 'U') =>
   ({ areaId: null, rackId, mountMode, startU, heightU });
 
 test('Rack layout: migration, legacy data, roles, capacity, concurrency, HTTP guards and safe down', { timeout: 180000 }, async t => {
-  const databaseName = 'rack_layout_test_' + randomUUID().replaceAll('-', '');
-  assert.match(databaseName, /^rack_layout_test_[a-f0-9]{32}$/);
-  const options = localSource.options;
-  const admin = new Client({ host: options.host, port: options.port, user: options.username,
-    password: options.password, database: options.database });
-  const db = new DataSource({ ...options, database: databaseName });
+  await withDisposableHttpDb('racks', async (db, verify) => {
+  const databaseName = db.options.database;
+  assert.match(databaseName, /^racks_test_[a-f0-9]{32}$/);
   const oldName = process.env.DB_NAME;
-  let created = false;
-  let app;
+  let app, failure;
   try {
-    await admin.connect();
-    await admin.query('CREATE DATABASE "' + databaseName + '"');
-    created = true;
-    await db.initialize();
+    await verify();
     assert.equal(db.options.synchronize, false);
-    await db.runMigrations();
     assert.equal(await db.showMigrations(), false);
     const projects = db.getRepository(Project);
     const first = await projects.save(projects.create({ code: 'RACK-A', name: 'Rack test A' }));
@@ -84,6 +75,7 @@ test('Rack layout: migration, legacy data, roles, capacity, concurrency, HTTP gu
           ? [first.id, rack.id, floor.id] : [first.id, rack.id];
         const firstRunner = db.createQueryRunner();
         const secondRunner = db.createQueryRunner();
+        let failure;
         try {
           await firstRunner.connect(); await secondRunner.connect();
           await firstRunner.startTransaction(); await secondRunner.startTransaction();
@@ -96,10 +88,14 @@ test('Rack layout: migration, legacy data, roles, capacity, concurrency, HTTP gu
           await firstRunner.commitTransaction();
           assert.deepEqual(await competing, { success: false, code: expectedCode });
           return rack;
-        } finally {
-          if (firstRunner.isTransactionActive) await firstRunner.rollbackTransaction();
-          if (secondRunner.isTransactionActive) await secondRunner.rollbackTransaction();
-          await firstRunner.release(); await secondRunner.release();
+        } catch (error) { failure = error; throw error; }
+        finally {
+          const errors = [];
+          for (const runner of [firstRunner, secondRunner]) {
+            try { if (runner.isTransactionActive) await runner.rollbackTransaction(); } catch (error) { errors.push(error); }
+            try { await runner.release(); } catch (error) { errors.push(error); }
+          }
+          if (errors.length) throw new AggregateError(failure ? [failure, ...errors] : errors, 'Rack race cleanup failed', { cause: failure ?? errors[0] });
         }
       };
       const linked = await race('RACK-RACE-LINK-FIRST',
@@ -117,8 +113,9 @@ test('Rack layout: migration, legacy data, roles, capacity, concurrency, HTTP gu
       const temporaryArea = await areas.save(areas.create({ projectId: first.id, code: 'F-TRANSIENT',
         name: 'Transient floor', type: 'FLOOR', sortOrder: 0 }));
       const runner = db.createQueryRunner();
-      await runner.connect();
+      let failure;
       try {
+        await runner.connect();
         await runner.startTransaction();
         await runner.query("SET LOCAL lock_timeout = '3s'");
         const rackId = (await runner.query(`INSERT INTO project_devices(project_id,type,code,name)
@@ -135,9 +132,12 @@ test('Rack layout: migration, legacy data, roles, capacity, concurrency, HTTP gu
         await runner.query('DELETE FROM project_devices WHERE project_id=$1 AND id=$2', [first.id, rackId]);
         await runner.commitTransaction();
         assert.equal((await db.query('SELECT count(*)::int AS count FROM project_devices WHERE id=$1', [rackId]))[0].count, 0);
-      } finally {
-        if (runner.isTransactionActive) await runner.rollbackTransaction();
-        await runner.release();
+      } catch (error) { failure = error; throw error; }
+      finally {
+        const errors = [];
+        try { if (runner.isTransactionActive) await runner.rollbackTransaction(); } catch (error) { errors.push(error); }
+        try { await runner.release(); } catch (error) { errors.push(error); }
+        if (errors.length) throw new AggregateError(failure ? [failure, ...errors] : errors, 'Rack transaction cleanup failed', { cause: failure ?? errors[0] });
       }
     });
 
@@ -223,7 +223,7 @@ test('Rack layout: migration, legacy data, roles, capacity, concurrency, HTTP gu
       const { AppModule } = require('../dist/app.module.js');
       app = await NestFactory.create(AppModule, { logger: false });
       app.useGlobalPipes(new ValidationPipe({ whitelist: true, transform: true }));
-      await app.listen(0, '127.0.0.1');
+      await app.listen(0, '127.0.0.1'); await verify(app.get(DataSource));
       assert.equal(app.get(DataSource).options.database, databaseName);
       const base = 'http://127.0.0.1:' + app.getHttpServer().address().port;
       const headers = {};
@@ -255,27 +255,29 @@ test('Rack layout: migration, legacy data, roles, capacity, concurrency, HTTP gu
     });
 
     await t.test('down refuses to discard new enum Device data', async () => {
-      await db.undoLastMigration(); // Remove the later User security migration before testing rack migration down.
+      await verify(); await db.undoLastMigration(); // Remove the later User security migration before testing rack migration down.
       assert.equal((await db.query('SELECT name FROM migrations ORDER BY id DESC LIMIT 1'))[0].name, 'CreateProjectAcceptances1802000000000');
-      await db.undoLastMigration();
+      await verify(); await db.undoLastMigration();
       assert.equal((await db.query('SELECT name FROM migrations ORDER BY id DESC LIMIT 1'))[0].name, 'CreateEvidenceAttachments1801000000000');
-      await db.undoLastMigration();
+      await verify(); await db.undoLastMigration();
       assert.equal((await db.query('SELECT name FROM migrations ORDER BY id DESC LIMIT 1'))[0].name, 'CreateInspections1800000000000');
-      await db.undoLastMigration();
+      await verify(); await db.undoLastMigration();
       assert.equal((await db.query('SELECT name FROM migrations ORDER BY id DESC LIMIT 1'))[0].name, 'EnforceRackServedAreaForeignKey1799000000000');
-      await db.undoLastMigration();
+      await verify(); await db.undoLastMigration();
       assert.equal((await db.query('SELECT name FROM migrations ORDER BY id DESC LIMIT 1'))[0].name, 'EnforceRackLayoutIntegrity1798000000000');
-      await db.undoLastMigration();
+      await verify(); await db.undoLastMigration();
       assert.equal((await db.query('SELECT name FROM migrations ORDER BY id DESC LIMIT 1'))[0].name, 'AddRackLayout1797000000000');
+      await verify();
       await assert.rejects(db.undoLastMigration(), /Rack layout contains data/);
       assert.equal((await db.query('SELECT name FROM migrations ORDER BY id DESC LIMIT 1'))[0].name, 'AddRackLayout1797000000000');
       assert.equal((await db.query("SELECT count(*)::int AS count FROM project_devices WHERE type='PDU'"))[0].count, 1);
     });
-  } finally {
-    if (app) await app.close();
-    if (db.isInitialized) await db.destroy();
+  } catch (error) { failure = error; }
+  finally {
+    try { if (app) await app.close(); }
+    catch (error) { failure = failure ? new AggregateError([failure, error], 'Rack app cleanup failed', { cause: failure }) : error; }
     if (oldName === undefined) delete process.env.DB_NAME; else process.env.DB_NAME = oldName;
-    if (created) await admin.query('DROP DATABASE "' + databaseName + '"');
-    await admin.end();
   }
+  if (failure) throw failure;
+  });
 });

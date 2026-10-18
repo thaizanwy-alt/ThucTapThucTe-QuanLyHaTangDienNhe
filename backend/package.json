@@ -11,7 +11,7 @@
     "seed": "npm run build && node dist/database/seed.js",
     "seed:demo": "node scripts/seed-demo.cjs",
     "seed:checklists": "npm run build && node dist/database/seed-checklists.js",
-    "test": "npm run build && node --test --test-reporter=spec test/roles.guard.test.cjs test/projects.test.cjs test/tasks.test.cjs test/devices.test.cjs test/connections.test.cjs test/network-profile.test.cjs test/inspections.test.cjs test/acceptances.test.cjs test/exports.worker.test.cjs",
+    "test": "npm run build && node --test --test-reporter=spec test/disposable-http-db.test.cjs test/roles.guard.test.cjs test/projects.test.cjs test/tasks.test.cjs test/devices.test.cjs test/connections.test.cjs test/network-profile.test.cjs test/inspections.test.cjs test/acceptances.test.cjs test/exports.worker.test.cjs",
     "test:db": "npm run build && node --test --test-concurrency=1 --test-reporter=spec test/users.db.test.cjs test/tasks.db.test.cjs test/tasks.http.test.cjs test/devices.db.test.cjs test/devices.http.test.cjs test/connections.db.test.cjs test/network-profile.db.test.cjs test/racks.db.test.cjs test/inspections.db.test.cjs test/evidence.db.test.cjs test/acceptances.db.test.cjs test/exports.db.test.cjs test/project-summary.db.test.cjs",
     "test:summary:db": "npm run build && node --test --test-reporter=spec test/project-summary.db.test.cjs",
     "test:users:db": "npm run build && node --test --test-reporter=spec test/users.db.test.cjs",

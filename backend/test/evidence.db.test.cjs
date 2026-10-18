@@ -5,9 +5,8 @@ const { randomUUID, randomBytes, createHash } = require('node:crypto');
 const fs = require('node:fs/promises');
 const os = require('node:os');
 const path = require('node:path');
-const { Client } = require('pg');
 const { DataSource } = require('typeorm');
-const { dataSource } = require('../dist/database/data-source');
+const { withDisposableHttpDb, cleanupTestRunner } = require('./disposable-http-db.cjs');
 const { EvidenceService } = require('../dist/evidence/evidence.service');
 const { EvidenceStorage } = require('../dist/evidence/evidence.storage');
 const { EvidenceAttachment } = require('../dist/evidence/evidence.entity');
@@ -31,7 +30,7 @@ async function orderedRace(db, firstAction, secondAction, storage) {
   const gate = new Promise(r => { release = r; });
   const prepared = new Promise((r,j) => { ready = r; failed = j; });
   const settle = p => p.then(value => ({ value }), error => ({ error }));
-  let first, second;
+  let first, second, failure;
   const services = (runner, hold) => {
     const wrapped = { getRepository: e => db.getRepository(e), createQueryRunner: () => new Proxy(runner, { get(target,key) {
       if(key==='release') return async()=>{}; // The race owns both connections.
@@ -46,7 +45,12 @@ async function orderedRace(db, firstAction, secondAction, storage) {
         const value = await work(runner.manager);
         if (hold) { ready(); await gate; }
         await runner.commitTransaction(); return value;
-      } catch (e) { if (hold) failed(e); if (runner.isTransactionActive) await runner.rollbackTransaction(); throw e; }
+      } catch (e) {
+        if (hold) failed(e);
+        try { if (runner.isTransactionActive) await runner.rollbackTransaction(); }
+        catch (cleanup) { throw new AggregateError([e, cleanup], 'Race transaction rollback failed', { cause: e }); }
+        throw e;
+      }
     }};
     return { evidence: new EvidenceService(wrapped, storage), inspections: new InspectionsService(wrapped),
       // Task operations use a conditional UPDATE; an outer real transaction
@@ -65,21 +69,77 @@ async function orderedRace(db, firstAction, secondAction, storage) {
     } while (!blocked && Date.now()<end);
     assert.equal(blocked,true,'second connection must actually wait on PostgreSQL lock');
     release(); return [await first, await second];
-  } finally { release(); if(first) await first; if(second) await second; await a.release(); await b.release(); }
+  } catch (error) { failure = error; throw error; }
+  finally {
+    release(); if(first) await first; if(second) await second;
+    const errors = [];
+    for (const runner of [a, b]) {
+      try { if (runner.isTransactionActive) await runner.rollbackTransaction(); } catch (error) { errors.push(error); }
+      try { await runner.release(); } catch (error) { errors.push(error); }
+    }
+    if (errors.length) throw new AggregateError(failure ? [failure, ...errors] : errors, 'Evidence race cleanup failed', { cause: failure ?? errors[0] });
+  }
 }
 
-test('Evidence PostgreSQL/HTTP contract', { timeout: 180000 }, async t => {
-  const name = 'evidence_test_'+randomUUID().replaceAll('-','');
+test('partial TypeORM bootstrap failure closes real PostgreSQL pool/session and drops its owned DB', { timeout: 30000 }, async () => {
+  // Real pool/SQL; only the bootstrap getVersion failure is injected. No global patch.
+  const Module = require('node:module');
+  const { Client } = require('pg');
+  const { dataSource } = require('../dist/database/data-source.js');
+  const original = new Error('Injected bootstrap failure before isInitialized');
+  let pool, name, injected = false;
+  class BootstrapFailureSource extends DataSource {
+    constructor(options) {
+      super(options);
+      name = options.database;
+      const create = this.driver.createQueryRunner.bind(this.driver);
+      this.driver.createQueryRunner = (...args) => {
+        const runner = create(...args);
+        runner.getVersion = async () => {
+          pool = this.driver.master;
+          assert.equal(this.isInitialized, false);
+          const [identity] = await runner.query(`SELECT current_database() AS name,
+            current_user AS actor, pg_get_userbyid(datdba) AS owner,
+            shobj_description(oid,'pg_database') AS marker FROM pg_database WHERE datname=current_database()`);
+          assert.equal(identity.name, name);
+          assert.equal(identity.actor, identity.owner);
+          assert.match(identity.marker, /^elv-disposable:/);
+          assert.ok(pool.totalCount > 0, 'a real PostgreSQL session exists before the fault');
+          injected = true;
+          throw original;
+        };
+        return runner;
+      };
+    }
+  }
+  const filename = path.join(__dirname, 'disposable-http-db.cjs');
+  const loaded = new Module(filename, module);
+  loaded.filename = filename; loaded.paths = module.paths;
+  loaded.require = key => key === 'typeorm' ? { DataSource: BootstrapFailureSource } : require(key);
+  loaded._compile(require('node:fs').readFileSync(filename, 'utf8'), filename);
+  await assert.rejects(loaded.exports.withDisposableHttpDb('bootstrap', async () => assert.fail('no migration/fixture callback')), e => e === original);
+  assert.equal(injected, true);
+  assert.equal(pool.ended, true);
+  assert.equal(pool.totalCount, 0);
   const options = dataSource.options;
-  const admin = new Client({ host:options.host,port:options.port,user:options.username,password:options.password,database:options.database });
-  const db = new DataSource({...options,database:name});
-  const previous = { DB_NAME:process.env.DB_NAME, JWT_SECRET:process.env.JWT_SECRET, EVIDENCE_STORAGE_DIR:process.env.EVIDENCE_STORAGE_DIR };
-  const root = await fs.mkdtemp(path.join(os.tmpdir(),'elv-evidence-'));
-  process.env.EVIDENCE_STORAGE_DIR=root;
-  let created=false, app;
+  const observer = new Client({ host: options.host, port: options.port, user: options.username,
+    password: options.password, database: options.database, connectionTimeoutMillis: 5000, statement_timeout: 5000 });
   try {
-    await admin.connect(); await admin.query(`CREATE DATABASE "${name}" TEMPLATE template0 ENCODING 'UTF8' LC_COLLATE 'C' LC_CTYPE 'C'`); created=true;
-    await db.initialize(); await db.runMigrations();
+    await observer.connect();
+    assert.equal((await observer.query('SELECT 1 FROM pg_database WHERE datname=$1', [name])).rowCount, 0);
+    assert.equal((await observer.query('SELECT 1 FROM pg_stat_activity WHERE datname=$1', [name])).rowCount, 0);
+  } finally { await observer.end(); }
+});
+
+test('Evidence PostgreSQL/HTTP contract', { timeout: 180000 }, async t => {
+  await withDisposableHttpDb('evidence', async (db, verify) => {
+  const name = db.options.database;
+  const previous = { DB_NAME:process.env.DB_NAME, JWT_SECRET:process.env.JWT_SECRET, EVIDENCE_STORAGE_DIR:process.env.EVIDENCE_STORAGE_DIR };
+  let root, app, failure;
+  try {
+    await verify();
+    root = await fs.mkdtemp(path.join(os.tmpdir(),'elv-evidence-'));
+    process.env.EVIDENCE_STORAGE_DIR=root;
     const users=db.getRepository(User);
     const makeUser=(email,role)=>users.save({email,role,isActive:true,passwordHash:randomBytes(32).toString('hex')});
     const manager=await makeUser('manager@evidence.invalid','MANAGER');
@@ -99,6 +159,67 @@ test('Evidence PostgreSQL/HTTP contract', { timeout: 180000 }, async t => {
     const sheet=()=>inspections.createInspection(p.id,{code:'S-'+(++serial),title:'Evidence sheet',systemId:system.id,templateId:template.id},manager);
     const fault=async()=>{ const s=await sheet(); const i=await inspections.putResult(p.id,s.id,s.items[0].id,{expectedVersion:1,result:'FAIL',issue:{description:'Fault',assigneeId:tech.id}},manager); return i.activeIssue; };
     let a,e,issue;
+
+    await t.test('failed rollback discards the real lock holder before awaiting retry; next request uses a clean session', {timeout:25000}, async () => {
+      const holder=db.createQueryRunner(), waiter=db.createQueryRunner();
+      const rollback=holder.rollbackTransaction;
+      const original=new assert.AssertionError({message:'Injected assertion while holding a row lock'});
+      const rollbackFailure=new Error('Injected rollback failure before SQL');
+      let pending,failure,heldClient,holderPid,waiterPid;
+      const acquired=[],removed=[];
+      const onAcquire=client=>acquired.push(client);
+      const onRemove=client=>removed.push(client);
+      try {
+        await holder.connect(); await waiter.connect();
+        await verify(holder); await verify(waiter);
+        await waiter.query("SET statement_timeout='8s'");
+        await waiter.query("SET lock_timeout='6s'");
+        holderPid=(await holder.query('SELECT pg_backend_pid() pid'))[0].pid;
+        waiterPid=(await waiter.query('SELECT pg_backend_pid() pid'))[0].pid;
+        heldClient=await holder.connect();
+        await holder.startTransaction();
+        await holder.query('SELECT id FROM projects WHERE id=$1 FOR UPDATE',[p.id]);
+        pending=waiter.query('UPDATE projects SET name=name WHERE id=$1 RETURNING id',[p.id],true)
+          .then(value=>({value}),error=>({error}));
+        let blocked=false; const end=Date.now()+4000;
+        do {
+          blocked=(await db.query('SELECT $1::int=ANY(pg_blocking_pids($2::int)) blocked',[holderPid,waiterPid]))[0].blocked;
+          if(!blocked) await new Promise(resolve=>setImmediate(resolve));
+        } while(!blocked && Date.now()<end);
+        assert.equal(blocked,true,'the second independent session must be waiting for this row lock');
+        db.driver.master.on('remove',onRemove);
+        holder.rollbackTransaction=async()=>{throw rollbackFailure;};
+        const release=holder.release.bind(holder);
+        holder.release=async()=>{
+          assert.equal(heldClient._ended,true,'client end acknowledged before release');
+          assert.equal(heldClient.connection.stream.closed,true,'socket closed before release');
+          return release();
+        };
+        await assert.rejects(cleanupTestRunner(holder,original,pending), error =>
+          error instanceof AggregateError && error.cause===original && error.errors[0]===original && error.errors.includes(rollbackFailure));
+        assert.equal(holder.isReleased,true);
+        assert.ok(removed.includes(heldClient),'pg-pool acknowledged removal of the discarded client');
+        assert.equal((await db.query('SELECT 1 FROM pg_stat_activity WHERE pid=$1',[holderPid])).length,0);
+        const result=await pending; assert.ifError(result.error);
+        assert.equal(result.value.records[0].id,p.id,'waiter completed after the lock holder disconnected');
+        assert.equal(heldClient.getTransactionStatus(),'T','failed rollback did not run SQL; disconnection released the lock');
+        assert.equal(db.driver.connectedQueryRunners.includes(holder),false);
+        db.driver.master.on('acquire',onAcquire);
+        assert.equal((await db.query('SELECT 1 AS clean'))[0].clean,1);
+        assert.ok(acquired.length>0);
+        assert.ok(acquired.every(client=>client!==heldClient),'pool must never reuse the discarded client');
+        assert.ok(acquired.every(client=>client.getTransactionStatus()==='I'),'the next request is not inside the old transaction');
+      } catch(error) { failure=error; throw error; }
+      finally {
+        holder.rollbackTransaction=rollback;
+        db.driver.master.off('acquire',onAcquire);
+        db.driver.master.off('remove',onRemove);
+        const errors=[];
+        try { if(!holder.isReleased) await cleanupTestRunner(holder,failure,pending); } catch(error) { errors.push(error); }
+        try { await cleanupTestRunner(waiter); } catch(error) { errors.push(error); }
+        if(errors.length) throw new AggregateError(failure?[failure,...errors]:errors,'Rollback regression cleanup failed',{cause:failure??errors[0]});
+      }
+    });
 
     await t.test('idempotency normalizes caption, persists one file, never changes Task; conflicting content is 409',async()=>{
       a=await task(); const before=await tasks.getTask(p.id,a.id,manager); const key=randomUUID();
@@ -191,11 +312,13 @@ test('Evidence PostgreSQL/HTTP contract', { timeout: 180000 }, async t => {
       const failing=new EvidenceService(db,{...storage,promote:async()=>{throw new (require('@nestjs/common').ServiceUnavailableException)('Storage failed');},discard:p=>storage.discard(p)});
       await rejects(upload({taskId:q.id},tech,randomUUID(),null,failing),503);
       assert.deepEqual(await svc.list(p.id,{taskId:q.id},manager),[]);
-      const runner=db.createQueryRunner(); await runner.connect(); await runner.startTransaction();
+      const runner=db.createQueryRunner(); let failure;
       try {
+        await runner.connect(); await runner.startTransaction();
         await assert.rejects(runner.query(`INSERT INTO evidence_attachments(project_id,task_id,storage_key,original_name,mime_type,size_bytes,sha256,uploaded_by_id,idempotency_key,fingerprint)
           VALUES($1,$2,$3,'a.png','image/png',1,$4,$5,$6,$4)`,[p2.id,q.id,randomUUID(),'a'.repeat(64),tech.id,randomUUID()]),e=>e.driverError.code==='23503');
-      } finally { await runner.rollbackTransaction(); await runner.release(); }
+      } catch (error) { failure=error; throw error; }
+      finally { await cleanupTestRunner(runner,failure); }
     });
     await t.test('read-only reconciliation never deletes metadata files, tmp/in-flight or orphan candidates',async()=>{
       const extra=randomUUID(), active=randomUUID(); await fs.writeFile(path.join(root,'files',extra),png); await fs.writeFile(path.join(root,'tmp',active),png);
@@ -217,7 +340,7 @@ test('Evidence PostgreSQL/HTTP contract', { timeout: 180000 }, async t => {
     });
     await t.test('unknown COMMIT while transaction is still pending retains file; blocked retry returns one committed row', {timeout:15000},async()=>{
       const q=await task(),key=randomUUID(),file=await staged();
-      const runner=db.createQueryRunner();let retry;
+      const runner=db.createQueryRunner();let retry,failure;
       const ambiguous=new EvidenceService({createQueryRunner:()=>new Proxy(runner,{get(target,key){
         if(key==='commitTransaction')return async()=>{throw new Error('Injected unknown COMMIT outcome');};
         if(key==='rollbackTransaction')return async()=>{throw new Error('Injected unavailable rollback acknowledgement');};
@@ -242,7 +365,8 @@ test('Evidence PostgreSQL/HTTP contract', { timeout: 180000 }, async t => {
         assert.equal(await db.getRepository(EvidenceAttachment).countBy({taskId:q.id}),1);
         const content=await storage.content(file.key);await content.close();
         assert.equal((await fs.readdir(path.join(root,'tmp'))).length,0);
-      } finally {if(runner.isTransactionActive)await runner.rollbackTransaction();if(retry)await retry;await runner.release();}
+      } catch (error) { failure=error; throw error; }
+      finally {await cleanupTestRunner(runner,failure,retry);}
     });
     await t.test('Issue reassignment revokes upload/content/retry; Item/Issue upload leaves versions unchanged',async()=>{
       const f=await fault(); const before=await inspections.getIssue(p.id,f.id,manager), key=randomUUID();
@@ -259,7 +383,7 @@ test('Evidence PostgreSQL/HTTP contract', { timeout: 180000 }, async t => {
       process.env.DB_NAME=name; process.env.JWT_SECRET=randomBytes(48).toString('hex');
       const { NestFactory }=require('@nestjs/core'),{ValidationPipe}=require('@nestjs/common'),{JwtService}=require('@nestjs/jwt');
       app=await NestFactory.create(require('../dist/app.module').AppModule,{logger:false});
-      app.useGlobalPipes(new ValidationPipe({whitelist:true,transform:true})); await app.listen(0,'127.0.0.1');
+      app.useGlobalPipes(new ValidationPipe({whitelist:true,transform:true})); await app.listen(0,'127.0.0.1'); await verify(app.get(DataSource));
       assert.equal(app.get(DataSource).options.database,name); const base='http://127.0.0.1:'+app.getHttpServer().address().port;
       assert.deepEqual(await (await fetch(base+'/health')).json(),{status:'ok',database:'connected'});
       const auth={}; for(const u of [manager,tech,other]) auth[u.id]={Authorization:'Bearer '+await app.get(JwtService).signAsync({sub:u.id,authVersion:u.authVersion})};
@@ -336,20 +460,26 @@ test('Evidence PostgreSQL/HTTP contract', { timeout: 180000 }, async t => {
     await t.test('isolated down/up removes only evidence schema, preserves all business rows and disk',async()=>{
       const before={};for(const table of ['users','projects','project_tasks','project_inspections','inspection_items','remediation_issues']) before[table]=await db.query(table==='users'?'SELECT id,email,role,is_active FROM users ORDER BY id':`SELECT * FROM ${table} ORDER BY id`);
       const files=await fs.readdir(path.join(root,'files'));
-      await db.undoLastMigration(); // Remove the later User security migration before the evidence migration sequence.
+      await verify(); await db.undoLastMigration(); // Remove the later User security migration before the evidence migration sequence.
       assert.equal((await db.query('SELECT name FROM migrations ORDER BY id DESC LIMIT 1'))[0].name,'CreateProjectAcceptances1802000000000');
-      await db.undoLastMigration();
+      await verify(); await db.undoLastMigration();
       assert.equal((await db.query('SELECT name FROM migrations ORDER BY id DESC LIMIT 1'))[0].name,'CreateEvidenceAttachments1801000000000');
-      await db.undoLastMigration(); assert.equal((await db.query("SELECT to_regclass('evidence_attachments') name"))[0].name,null);
+      await verify(); await db.undoLastMigration(); assert.equal((await db.query("SELECT to_regclass('evidence_attachments') name"))[0].name,null);
       for(const [table,rows] of Object.entries(before)) assert.deepEqual(await db.query(table==='users'?'SELECT id,email,role,is_active FROM users ORDER BY id':`SELECT * FROM ${table} ORDER BY id`),rows);
-      assert.deepEqual(await fs.readdir(path.join(root,'files')),files);await db.runMigrations();assert.equal(await db.showMigrations(),false);
+      assert.deepEqual(await fs.readdir(path.join(root,'files')),files);await verify(); await db.runMigrations();assert.equal(await db.showMigrations(),false);
     });
-  } finally {
-    if(app) await app.close();if(db.isInitialized) await db.destroy();
+  } catch (error) { failure = error; }
+  finally {
+    const errors = [];
+    try { if(app) await app.close(); } catch (error) { errors.push(error); }
     for(const [k,v] of Object.entries(previous)) if(v===undefined) delete process.env[k];else process.env[k]=v;
-    if(created) await admin.query(`DROP DATABASE "${name}"`);await admin.end();
     // Validated mkdtemp directory owned by this test, never repository/demo storage.
-    assert.ok(path.resolve(root).startsWith(path.resolve(os.tmpdir())+path.sep)); assert.ok(path.basename(root).startsWith('elv-evidence-'));
-    await fs.rm(root,{recursive:true,force:true});
+    try { if (root) {
+      assert.ok(path.resolve(root).startsWith(path.resolve(os.tmpdir())+path.sep)); assert.ok(path.basename(root).startsWith('elv-evidence-'));
+      await fs.rm(root,{recursive:true,force:true});
+    } } catch (error) { errors.push(error); }
+    if (errors.length) throw new AggregateError(failure ? [failure, ...errors] : errors, `Evidence cleanup incomplete: ${root ?? 'storage not created'}`, { cause: failure ?? errors[0] });
   }
+  if (failure) throw failure;
+  });
 });

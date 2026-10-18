@@ -1,7 +1,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const { randomUUID } = require('node:crypto');
-const { dataSource } = require('../dist/database/data-source.js');
+const { withDisposableHttpDb } = require('./disposable-http-db.cjs');
 const { TasksService } = require('../dist/tasks/tasks.service.js');
 const { ProjectTask } = require('../dist/tasks/project-task.entity.js');
 const { Project } = require('../dist/projects/project.entity.js');
@@ -21,18 +21,18 @@ async function expectDatabaseCode(runner, sql, parameters, code) {
   }
 }
 
-test('ProjectTask composite FK and RESTRICT constraints are enforced by PostgreSQL without changing stored data', async (t) => {
-  await dataSource.initialize();
+test('ProjectTask composite FK, RESTRICT and workflow use an owned disposable PostgreSQL database', { timeout: 180000 }, async () => {
+  await withDisposableHttpDb('tasks', async (dataSource, verify) => {
   const runner = dataSource.createQueryRunner();
-  await runner.connect();
+  let failure;
   try {
+    await runner.connect();
+    await verify(runner);
     await runner.startTransaction();
-    const technicians = await runner.query(`SELECT "id" FROM "users" WHERE "role" = 'TECHNICIAN' AND "is_active" = true LIMIT 1`);
-    const managers = await runner.query(`SELECT "id" FROM "users" WHERE "role" = 'MANAGER' AND "is_active" = true LIMIT 1`);
-    if (technicians.length === 0 || managers.length === 0) {
-      t.skip('No active demo manager and technician exist in the local database');
-      return;
-    }
+    const createUser = role => runner.query('INSERT INTO users (email,password_hash,role,is_active) VALUES ($1,$2,$3,true) RETURNING id',
+      [`${role.toLowerCase()}-${randomUUID()}@example.invalid`, randomUUID(), role]);
+    const technicians = await createUser(UserRole.TECHNICIAN);
+    const managers = await createUser(UserRole.MANAGER);
     const suffix = randomUUID().replaceAll('-', '').slice(0, 16).toUpperCase();
     const makeProject = async (tag) => (await runner.query(
       'INSERT INTO "projects" ("code", "name") VALUES ($1, $2) RETURNING "id"',
@@ -78,9 +78,13 @@ test('ProjectTask composite FK and RESTRICT constraints are enforced by PostgreS
     await service.startTask(firstProjectId, inserted[0].id, technician);
     await service.submitTask(firstProjectId, inserted[0].id, 'Đã sửa', technician);
     assert.equal((await service.approveTask(firstProjectId, inserted[0].id, manager)).status, TaskStatus.APPROVED);
-  } finally {
-    if (runner.isTransactionActive) await runner.rollbackTransaction();
-    await runner.release();
-    await dataSource.destroy();
+  } catch (error) { failure = error; }
+  finally {
+    const errors = [];
+    try { if (runner.isTransactionActive) await runner.rollbackTransaction(); } catch (error) { errors.push(error); }
+    try { await runner.release(); } catch (error) { errors.push(error); }
+    if (errors.length) throw new AggregateError(failure ? [failure, ...errors] : errors, 'Task fixture cleanup failed', { cause: failure ?? errors[0] });
   }
+  if (failure) throw failure;
+  });
 });

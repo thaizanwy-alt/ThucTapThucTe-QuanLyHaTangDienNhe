@@ -120,7 +120,8 @@ test('Project summary PostgreSQL snapshot and HTTP contract', { timeout: 180000 
   const previousSecret = process.env.JWT_SECRET;
   process.env.JWT_SECRET = randomBytes(48).toString('hex');
   try {
-    await withDisposableHttpDb('summary', async db => {
+    await withDisposableHttpDb('summary', async (db, verify) => {
+      await verify();
       const f = await fixture(db);
       const service = new ProjectSummaryService(db);
       const managerUser = { id: f.manager.id, role: 'MANAGER' };
@@ -205,11 +206,12 @@ test('Project summary PostgreSQL snapshot and HTTP contract', { timeout: 180000 
       });
 
       await t.test('Nest HTTP JWT, forced-password guard, 404 and existing Project route', async () => {
-        let app;
+        let app, failure;
         try {
           app = await NestFactory.create(AppModule, { logger: false });
           app.useGlobalPipes(new ValidationPipe({ whitelist: true, transform: true }));
           await app.listen(0, '127.0.0.1');
+          await verify(app.get(DataSource));
           const base = `http://127.0.0.1:${app.getHttpServer().address().port}`;
           const jwt = app.get(JwtService);
           const auth = user => ({ Authorization: `Bearer ${jwt.sign({ sub: user.id, authVersion: user.authVersion })}` });
@@ -233,7 +235,12 @@ test('Project summary PostgreSQL snapshot and HTTP contract', { timeout: 180000 
           const project = await fetch(base + `/projects/${f.project.id}`, { headers: auth(f.manager) });
           assert.equal(project.status, 200);
           assert.equal((await project.json()).status, 'IN_PROGRESS');
-        } finally { if (app) await app.close(); }
+        } catch (error) { failure = error; }
+        finally {
+          try { if (app) await app.close(); }
+          catch (error) { failure = failure ? new AggregateError([failure, error], 'Summary app cleanup failed', { cause: failure }) : error; }
+        }
+        if (failure) throw failure;
       });
     });
   } finally {

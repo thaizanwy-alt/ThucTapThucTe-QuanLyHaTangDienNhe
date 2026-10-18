@@ -1,8 +1,33 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const { randomUUID } = require('node:crypto');
-const { main, requireManagedProject, assertDeviceFixture, assertLayoutPreflight, preflightExistingDependents,
-  seedDemoTasks, PROJECT_CODE, MARKER } = require('../scripts/seed-demo.cjs');
+const fs = require('node:fs');
+const path = require('node:path');
+const Module = require('node:module');
+
+// Load the real seed without changing its implementation or global process.env.
+// Only synthetic configuration can reach main(); real .env reads are forbidden.
+function loadSeed(hostEnvironment = {}) {
+  const filename = path.resolve(__dirname, '../scripts/seed-demo.cjs');
+  const envPath = path.resolve(__dirname, '../.env');
+  const loaded = new Module(filename, module);
+  loaded.filename = filename; loaded.paths = module.paths;
+  loaded.fixtureProcess = { env: Object.freeze({ ...hostEnvironment }) };
+  const state = { envChecks: 0, envReads: 0 };
+  loaded.require = name => name === 'node:fs' ? {
+    existsSync(file) {
+      assert.equal(path.resolve(file), envPath);
+      state.envChecks++;
+      return false;
+    },
+    readFileSync() { state.envReads++; throw new Error('Seed unit must not read a real env file'); },
+  } : loaded.constructor.prototype.require.call(loaded, name);
+  loaded._compile(`const process = module.fixtureProcess;\n${fs.readFileSync(filename, 'utf8')}`, filename);
+  return { seed: loaded.exports, state };
+}
+
+const { requireManagedProject, assertDeviceFixture, assertLayoutPreflight, preflightExistingDependents,
+  seedDemoTasks, PROJECT_CODE, MARKER } = loadSeed().seed;
 
 test('demo seed refuses an existing project code without its ownership marker', () => {
   const project = { description: MARKER, status: 'IN_PROGRESS',
@@ -32,8 +57,8 @@ test('device fixture comparison normalizes null, UUID case and system order, but
   assert.throws(() => assertDeviceFixture({ ...existing, areaId: randomUUID() }, expected), /conflicts/);
 });
 
-for (const changedField of ['description', 'capacityU']) {
-  test(`seed preflight refuses matching Device code with changed ${changedField} before dependent writes`, async () => {
+async function assertDevicePreflightConflict(changedField, hostEnvironment = {}) {
+    const { seed: { main }, state } = loadSeed(hostEnvironment);
     const projectId = randomUUID();
     const areaId = randomUUID();
     const floorId = randomUUID();
@@ -49,13 +74,23 @@ for (const changedField of ['description', 'capacityU']) {
       brand: null, model: null, serialNumber: null, locationNote: null,
       [changedField]: changedField === 'capacityU' ? 24 : 'Different description',
     };
+    const envOverride = {
+      DEMO_API_URL: 'http://127.0.0.1:3000',
+      DEMO_MANAGER_PASSWORD: randomUUID(), DEMO_TECHNICIAN_PASSWORD: randomUUID(),
+      DEMO_MANAGER_EMAIL: 'manager@seed-unit.invalid', DEMO_TECHNICIAN_EMAIL: 'technician@seed-unit.invalid',
+      DEMO_SECOND_TECHNICIAN_EMAIL: '', DEMO_SECOND_TECHNICIAN_PASSWORD: '',
+    };
     const fetchImpl = async (url, init) => {
+      assert.equal(new URL(url).origin, envOverride.DEMO_API_URL);
       const route = new URL(url).pathname;
       calls.push({ method: init.method, route });
       let result;
       if (route === '/health') result = { status: 'ok', database: 'connected' };
       else if (route === '/auth/login') {
-        const { email } = JSON.parse(init.body);
+        const { email, password } = JSON.parse(init.body);
+        assert.ok((email === envOverride.DEMO_MANAGER_EMAIL && password === envOverride.DEMO_MANAGER_PASSWORD)
+          || (email === envOverride.DEMO_TECHNICIAN_EMAIL && password === envOverride.DEMO_TECHNICIAN_PASSWORD),
+        'mock login must use only explicit synthetic fixture credentials');
         result = { accessToken: email.startsWith('manager') ? managerToken : technicianToken };
       } else if (route === '/auth/me') {
         result = init.headers.Authorization === `Bearer ${managerToken}`
@@ -76,15 +111,29 @@ for (const changedField of ['description', 'capacityU']) {
       else throw new Error(`Unexpected API route ${route}`);
       return new Response(JSON.stringify(result), { status: 200, headers: { 'Content-Type': 'application/json' } });
     };
-    const envOverride = {
-      DEMO_API_URL: 'http://127.0.0.1:3000',
-      DEMO_MANAGER_PASSWORD: randomUUID(), DEMO_TECHNICIAN_PASSWORD: randomUUID(),
-      DEMO_MANAGER_EMAIL: 'manager.demo@example.local', DEMO_TECHNICIAN_EMAIL: 'technician.demo@example.local',
-    };
     await assert.rejects(main({ envOverride, fetchImpl }), /Device code RACK-CORE conflicts/);
+    assert.equal(state.envChecks, 1);
+    assert.equal(state.envReads, 0);
+    assert.equal(calls.filter(({ route }) => route === '/auth/login').length, 2);
+    assert.ok(calls.some(({ method, route }) => method === 'GET' && route === `/projects/${projectId}/devices`));
     assert.equal(calls.filter(({ method, route }) => method !== 'GET' && route !== '/auth/login').length, 0);
+}
+
+for (const changedField of ['description', 'capacityU']) {
+  test(`seed preflight refuses matching Device code with changed ${changedField} before dependent writes`, async () => {
+    await assertDevicePreflightConflict(changedField);
   });
 }
+
+test('host second-technician configuration cannot change either Device conflict fixture or cause writes', async () => {
+  const hostEnvironment = Object.freeze({
+    DEMO_API_URL: 'http://untrusted-host.invalid',
+    DEMO_MANAGER_EMAIL: 'host-manager@seed-unit.invalid', DEMO_MANAGER_PASSWORD: randomUUID(),
+    DEMO_TECHNICIAN_EMAIL: 'host-technician@seed-unit.invalid', DEMO_TECHNICIAN_PASSWORD: randomUUID(),
+    DEMO_SECOND_TECHNICIAN_EMAIL: 'host-second@seed-unit.invalid', DEMO_SECOND_TECHNICIAN_PASSWORD: randomUUID(),
+  });
+  await Promise.all(['description', 'capacityU'].map(field => assertDevicePreflightConflict(field, hostEnvironment)));
+});
 
 test('rack layout preflight accepts pristine or exact fixture and rejects changed hierarchy or U', () => {
   const coreId = randomUUID();

@@ -5,9 +5,8 @@ const { randomUUID, randomBytes, createHash } = require('node:crypto');
 const fs = require('node:fs/promises');
 const os = require('node:os');
 const path = require('node:path');
-const { Client } = require('pg');
 const { DataSource } = require('typeorm');
-const { dataSource } = require('../dist/database/data-source');
+const { withDisposableHttpDb } = require('./disposable-http-db.cjs');
 const { AcceptancesService } = require('../dist/acceptances/acceptances.service');
 const { AcceptanceSnapshot, AcceptanceEvidence, ProjectAcceptance } = require('../dist/acceptances/acceptance.entities');
 const { EvidenceService } = require('../dist/evidence/evidence.service');
@@ -32,7 +31,7 @@ async function race(db, storage, firstAction, secondAction) {
   const gate = new Promise(r => { release = r; });
   const prepared = new Promise((r, j) => { ready = r; failed = j; });
   const settle = p => p.then(value => ({ value }), error => ({ error }));
-  let first, second;
+  let first, second, failure;
   const services = (runner, hold) => {
     const wrapped = { transaction: async (...args) => {
       try {
@@ -58,21 +57,27 @@ async function race(db, storage, firstAction, secondAction) {
     } while (!blocked && Date.now() < end);
     assert.equal(blocked, true, 'independent second connection actually waits for PostgreSQL lock');
     release(); return [await first, await second];
-  } finally { release(); if (first) await first; if (second) await second; await Promise.all(runners.map(r => r.release())); }
+  } catch (error) { failure = error; throw error; }
+  finally {
+    release(); if (first) await first; if (second) await second;
+    const errors = [];
+    for (const runner of runners) {
+      try { if (runner.isTransactionActive) await runner.rollbackTransaction(); } catch (error) { errors.push(error); }
+      try { await runner.release(); } catch (error) { errors.push(error); }
+    }
+    if (errors.length) throw new AggregateError(failure ? [failure, ...errors] : errors, 'Acceptance race cleanup failed', { cause: failure ?? errors[0] });
+  }
 }
 
 test('Acceptance PostgreSQL/HTTP contract', { timeout: 180000 }, async t => {
-  const name = 'acceptance_test_' + randomUUID().replaceAll('-', '');
-  const o = dataSource.options;
-  const admin = new Client({ host: o.host, port: o.port, user: o.username, password: o.password, database: o.database });
-  const db = new DataSource({ ...o, database: name });
+  await withDisposableHttpDb('acceptance', async (db, verify) => {
+  const name = db.options.database;
   const previous = { DB_NAME: process.env.DB_NAME, JWT_SECRET: process.env.JWT_SECRET, EVIDENCE_STORAGE_DIR: process.env.EVIDENCE_STORAGE_DIR };
-  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'elv-acceptance-'));
-  process.env.EVIDENCE_STORAGE_DIR = root;
-  let created = false, app;
+  let root, app, failure;
   try {
-    await admin.connect(); await admin.query(`CREATE DATABASE "${name}" TEMPLATE template0 ENCODING 'UTF8' LC_COLLATE 'C' LC_CTYPE 'C'`); created = true;
-    await db.initialize(); await db.runMigrations();
+    await verify();
+    root = await fs.mkdtemp(path.join(os.tmpdir(), 'elv-acceptance-'));
+    process.env.EVIDENCE_STORAGE_DIR = root;
     const userRepo = db.getRepository(User);
     const manager = await userRepo.save({ email: 'manager@acceptance.invalid', role: 'MANAGER', isActive: true, passwordHash: randomBytes(32).toString('hex') });
     const tech = await userRepo.save({ email: 'tech@acceptance.invalid', role: 'TECHNICIAN', isActive: true, passwordHash: randomBytes(32).toString('hex') });
@@ -227,7 +232,7 @@ test('Acceptance PostgreSQL/HTTP contract', { timeout: 180000 }, async t => {
       process.env.DB_NAME = name; process.env.JWT_SECRET = randomBytes(48).toString('hex');
       const { NestFactory } = require('@nestjs/core'), { ValidationPipe } = require('@nestjs/common'), { JwtService } = require('@nestjs/jwt');
       const { AppModule } = require('../dist/app.module');
-      app = await NestFactory.create(AppModule, { logger: false }); app.useGlobalPipes(new ValidationPipe({ whitelist: true, transform: true })); await app.listen(0, '127.0.0.1');
+      app = await NestFactory.create(AppModule, { logger: false }); app.useGlobalPipes(new ValidationPipe({ whitelist: true, transform: true })); await app.listen(0, '127.0.0.1'); await verify(app.get(DataSource));
       const base = await app.getUrl(), jwt = app.get(JwtService);
       const auth = u => ({ Authorization: 'Bearer ' + jwt.sign({ sub: u.id, authVersion: u.authVersion }), 'Content-Type': 'application/json' });
       const send = (method, url, user, body) => fetch(base + url, { method, headers: user ? auth(user) : {}, ...(body === undefined ? {} : { body: JSON.stringify(body) }) });
@@ -305,19 +310,25 @@ test('Acceptance PostgreSQL/HTTP contract', { timeout: 180000 }, async t => {
         ? 'SELECT id,email,role,is_active FROM users ORDER BY id'
         : `SELECT * FROM "${table}" ORDER BY to_jsonb("${table}")::text`);
       const files = (await fs.readdir(path.join(root, 'files'))).sort();
-      await db.undoLastMigration(); // Remove the later User security migration before testing acceptance down.
+      await verify(); await db.undoLastMigration(); // Remove the later User security migration before testing acceptance down.
       assert.equal((await db.query('SELECT name FROM migrations ORDER BY id DESC LIMIT 1'))[0].name, 'CreateProjectAcceptances1802000000000');
-      await db.undoLastMigration(); assert.equal((await db.query("SELECT to_regclass('project_acceptances') name"))[0].name, null);
+      await verify(); await db.undoLastMigration(); assert.equal((await db.query("SELECT to_regclass('project_acceptances') name"))[0].name, null);
       for (const table of tables) assert.deepEqual(await db.query(table === 'users'
         ? 'SELECT id,email,role,is_active FROM users ORDER BY id'
         : `SELECT * FROM "${table}" ORDER BY to_jsonb("${table}")::text`), before[table]);
-      assert.deepEqual((await fs.readdir(path.join(root, 'files'))).sort(), files); await db.runMigrations(); assert.equal(await db.showMigrations(), false);
+      assert.deepEqual((await fs.readdir(path.join(root, 'files'))).sort(), files); await verify(); await db.runMigrations(); assert.equal(await db.showMigrations(), false);
     });
-  } finally {
-    if (app) await app.close(); if (db.isInitialized) await db.destroy();
+  } catch (error) { failure = error; }
+  finally {
+    const errors = [];
+    try { if (app) await app.close(); } catch (error) { errors.push(error); }
     for (const [key, value] of Object.entries(previous)) if (value === undefined) delete process.env[key]; else process.env[key] = value;
-    if (created) await admin.query(`DROP DATABASE "${name}"`); await admin.end();
-    assert.ok(path.resolve(root).startsWith(path.resolve(os.tmpdir()) + path.sep)); assert.ok(path.basename(root).startsWith('elv-acceptance-'));
-    await fs.rm(root, { recursive: true, force: true });
+    try { if (root) {
+      assert.ok(path.resolve(root).startsWith(path.resolve(os.tmpdir()) + path.sep)); assert.ok(path.basename(root).startsWith('elv-acceptance-'));
+      await fs.rm(root, { recursive: true, force: true });
+    } } catch (error) { errors.push(error); }
+    if (errors.length) throw new AggregateError(failure ? [failure, ...errors] : errors, `Acceptance cleanup incomplete: ${root ?? 'storage not created'}`, { cause: failure ?? errors[0] });
   }
+  if (failure) throw failure;
+  });
 });

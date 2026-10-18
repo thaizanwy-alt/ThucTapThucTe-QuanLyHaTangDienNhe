@@ -2,9 +2,8 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const { randomUUID, randomBytes } = require('node:crypto');
-const { Client } = require('pg');
 const { DataSource } = require('typeorm');
-const { dataSource: localSource } = require('../dist/database/data-source.js');
+const { withDisposableHttpDb } = require('./disposable-http-db.cjs');
 const { ConnectionsService } = require('../dist/connections/connections.service.js');
 const { DevicesService } = require('../dist/devices/devices.service.js');
 const { Project } = require('../dist/projects/project.entity.js');
@@ -28,22 +27,14 @@ const checkRace = results => {
 };
 
 test('Connections: real PostgreSQL constraints/concurrency/rollback, Nest HTTP and migration down/up in a disposable DB', { timeout: 180000 }, async t => {
-  const databaseName = 'connections_test_' + randomUUID().replaceAll('-', '');
+  await withDisposableHttpDb('connections', async (db, verify) => {
+  const databaseName = db.options.database;
   assert.match(databaseName, /^connections_test_[a-f0-9]{32}$/);
-  const options = localSource.options;
-  const admin = new Client({ host: options.host, port: options.port, user: options.username,
-    password: options.password, database: options.database });
-  const db = new DataSource({ ...options, database: databaseName });
-  let created = false;
-  let app;
+  let app, failure;
   const originalDatabase = process.env.DB_NAME;
   try {
-    await admin.connect();
-    await admin.query('CREATE DATABASE "' + databaseName + '"');
-    created = true;
-    await db.initialize();
+    await verify();
     assert.equal(db.options.synchronize, false);
-    await db.runMigrations();
     assert.equal(await db.showMigrations(), false);
     const manager = { role: 'MANAGER' };
     const svc = new ConnectionsService(db);
@@ -215,15 +206,15 @@ test('Connections: real PostgreSQL constraints/concurrency/rollback, Nest HTTP a
       const before = saved((await svc.listConnections(p.id, original.device.id))[0]);
       const target = await switchPort();
       // This trigger only exists in the isolated disposable database.
-      await db.query(`CREATE FUNCTION connection_test_fail() RETURNS trigger LANGUAGE plpgsql AS $$
+      await verify(); await db.query(`CREATE FUNCTION connection_test_fail() RETURNS trigger LANGUAGE plpgsql AS $$
         BEGIN IF NEW.connection_id = '${before.id}'::uuid AND NEW."end" = 'B' THEN NEW.port_id := '${randomUUID()}'::uuid; END IF; RETURN NEW; END $$`);
-      await db.query('CREATE TRIGGER connection_test_fail BEFORE INSERT ON connection_endpoints FOR EACH ROW EXECUTE FUNCTION connection_test_fail()');
+      await verify(); await db.query('CREATE TRIGGER connection_test_fail BEFORE INSERT ON connection_endpoints FOR EACH ROW EXECUTE FUNCTION connection_test_fail()');
       try {
         await rejectsStatus(svc.rewire(p.id, before.id, { ...route('FIXED', end(original.port), end(target)), expectedVersion: before.version }, manager), 409);
         assert.deepEqual(saved((await svc.listConnections(p.id, original.device.id))[0]), before);
       } finally {
-        await db.query('DROP TRIGGER connection_test_fail ON connection_endpoints');
-        await db.query('DROP FUNCTION connection_test_fail()');
+        await verify(); await db.query('DROP TRIGGER connection_test_fail ON connection_endpoints');
+        await verify(); await db.query('DROP FUNCTION connection_test_fail()');
       }
     });
 
@@ -334,7 +325,7 @@ test('Connections: real PostgreSQL constraints/concurrency/rollback, Nest HTTP a
       const { AppModule } = require('../dist/app.module.js');
       app = await NestFactory.create(AppModule, { logger: false });
       app.useGlobalPipes(new ValidationPipe({ whitelist: true, transform: true }));
-      await app.listen(0, '127.0.0.1');
+      await app.listen(0, '127.0.0.1'); await verify(app.get(DataSource));
       assert.equal(app.get(DataSource).options.database, databaseName);
       const base = 'http://127.0.0.1:' + app.getHttpServer().address().port;
       const headers = {};
@@ -395,38 +386,38 @@ test('Connections: real PostgreSQL constraints/concurrency/rollback, Nest HTTP a
       assert.deepEqual(invalid, []);
       const countOld = async () => (await db.query('SELECT (SELECT count(*)::int FROM users) AS users, (SELECT count(*)::int FROM projects) AS projects, (SELECT count(*)::int FROM project_devices) AS devices'))[0];
       const before = await countOld();
-      await db.undoLastMigration(); // Leave the User security migration intact only after the historical down/up sequence.
+      await verify(); await db.undoLastMigration(); // Leave the User security migration intact only after the historical down/up sequence.
       assert.equal((await db.query('SELECT name FROM migrations ORDER BY id DESC LIMIT 1'))[0].name, 'CreateProjectAcceptances1802000000000');
-      await db.undoLastMigration();
+      await verify(); await db.undoLastMigration();
       assert.equal((await db.query('SELECT name FROM migrations ORDER BY id DESC LIMIT 1'))[0].name, 'CreateEvidenceAttachments1801000000000');
-      await db.undoLastMigration();
+      await verify(); await db.undoLastMigration();
       assert.equal((await db.query('SELECT name FROM migrations ORDER BY id DESC LIMIT 1'))[0].name, 'CreateInspections1800000000000');
-      await db.undoLastMigration();
+      await verify(); await db.undoLastMigration();
       assert.equal((await db.query('SELECT name FROM migrations ORDER BY id DESC LIMIT 1'))[0].name, 'EnforceRackServedAreaForeignKey1799000000000');
-      await db.undoLastMigration();
+      await verify(); await db.undoLastMigration();
       assert.equal((await db.query('SELECT name FROM migrations ORDER BY id DESC LIMIT 1'))[0].name, 'EnforceRackLayoutIntegrity1798000000000');
-      await db.undoLastMigration();
+      await verify(); await db.undoLastMigration();
       assert.equal((await db.query('SELECT name FROM migrations ORDER BY id DESC LIMIT 1'))[0].name, 'AddRackLayout1797000000000');
-      await db.undoLastMigration();
+      await verify(); await db.undoLastMigration();
       assert.equal((await db.query('SELECT name FROM migrations ORDER BY id DESC LIMIT 1'))[0].name, 'AddDeviceNetworkProfileAndPortMetadata1796000000000');
-      await db.undoLastMigration();
+      await verify(); await db.undoLastMigration();
       assert.equal((await db.query('SELECT name FROM migrations ORDER BY id DESC LIMIT 1'))[0].name, 'EnforceConnectionEndpointPair1795000000000');
-      await db.undoLastMigration();
+      await verify(); await db.undoLastMigration();
       assert.equal((await db.query("SELECT to_regclass('public.device_ports') AS table_name"))[0].table_name, 'device_ports');
       assert.equal((await db.query("SELECT count(*)::int AS count FROM pg_trigger WHERE tgname LIKE 'check_physical_connection_endpoint_pair_%'"))[0].count, 0);
       assert.deepEqual(await countOld(), before);
       assert.equal((await db.query('SELECT count(*)::int AS count FROM migrations'))[0].count, 5);
-      await db.runMigrations();
+      await verify(); await db.runMigrations();
       assert.equal(await db.showMigrations(), false);
       assert.equal((await db.query("SELECT count(*)::int AS count FROM pg_trigger WHERE tgname LIKE 'check_physical_connection_endpoint_pair_%'"))[0].count, 2);
       assert.deepEqual(await countOld(), before);
     });
-  } finally {
-    if (app) await app.close();
-    if (db.isInitialized) await db.destroy();
+  } catch (error) { failure = error; }
+  finally {
+    try { if (app) await app.close(); }
+    catch (error) { failure = failure ? new AggregateError([failure, error], 'Connections app cleanup failed', { cause: failure }) : error; }
     if (originalDatabase === undefined) delete process.env.DB_NAME; else process.env.DB_NAME = originalDatabase;
-    // Only the generated database successfully created by this run is ever dropped.
-    if (created) await admin.query('DROP DATABASE "' + databaseName + '"');
-    await admin.end();
   }
+  if (failure) throw failure;
+  });
 });

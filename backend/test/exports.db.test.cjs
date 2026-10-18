@@ -5,11 +5,10 @@ const { randomUUID, randomBytes, createHash } = require('node:crypto');
 const fs = require('node:fs/promises');
 const os = require('node:os');
 const path = require('node:path');
-const { Client } = require('pg');
 const { DataSource } = require('typeorm');
 const yauzl = require('yauzl');
 const readWorkbook = require('./read-xlsx.cjs');
-const { dataSource } = require('../dist/database/data-source');
+const { withDisposableHttpDb, closeOwnedDataSource, cleanupTestRunner } = require('./disposable-http-db.cjs');
 const { ExportsService, validSnapshot } = require('../dist/exports/exports.service');
 const { workbook, pdf, zipExport, RowBudget, exportLimits } = require('../dist/exports/exports.render');
 const { EvidenceStorage } = require('../dist/evidence/evidence.storage');
@@ -55,19 +54,15 @@ function readZip(file) {
 
 
 test('handover exports: isolated PostgreSQL, HTTP, PDF and XLSX', { timeout: 180000 }, async t => {
-  const name = 'exports_test_' + randomUUID().replaceAll('-', '');
-  const o = dataSource.options;
-  const admin = new Client({ host: o.host, port: o.port, user: o.username, password: o.password, database: o.database });
-  const db = new DataSource({ ...o, database: name });
+  await withDisposableHttpDb('exports', async (db, verify) => {
+  const name = db.options.database;
   const previous = { DB_NAME: process.env.DB_NAME, JWT_SECRET: process.env.JWT_SECRET, EVIDENCE_STORAGE_DIR: process.env.EVIDENCE_STORAGE_DIR };
-  const tempBaseline = new Set(await fs.readdir(os.tmpdir()));
-  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'elv-export-storage-'));
-  process.env.EVIDENCE_STORAGE_DIR = root;
-  let created = false, app;
+  let root, app, failure;
   try {
-    await admin.connect();
-    await admin.query(`CREATE DATABASE "${name}" TEMPLATE template0 ENCODING 'UTF8' LC_COLLATE 'C' LC_CTYPE 'C'`);
-    created = true; await db.initialize(); await db.runMigrations();
+    await verify();
+    const tempBaseline = new Set(await fs.readdir(os.tmpdir()));
+    root = await fs.mkdtemp(path.join(os.tmpdir(), 'elv-export-storage-'));
+    process.env.EVIDENCE_STORAGE_DIR = root;
     const manager = await db.getRepository(User).save({ email: 'manager@export.invalid', role: 'MANAGER', isActive: true, passwordHash: randomBytes(32).toString('hex') });
     const tech = await db.getRepository(User).save({ email: 'tech@export.invalid', role: 'TECHNICIAN', isActive: true, passwordHash: randomBytes(32).toString('hex') });
     const project = await db.getRepository(Project).save({ code: 'EXPORT-A', name: 'Tòa nhà kiểm thử tiếng Việt' });
@@ -367,12 +362,14 @@ test('handover exports: isolated PostgreSQL, HTTP, PDF and XLSX', { timeout: 180
           const startedAt=Date.now(); await rejects(bounded(slow.handoverPackage(project.id,acceptance.id,manager),5000),504);
           assert.ok(Date.now()-startedAt<4000,'pg_sleep is canceled/bounded by the package deadline');
         } else {
-          const lock=db.createQueryRunner(); await lock.connect(); await lock.startTransaction();
+          const lock=db.createQueryRunner(); let failure;
           try {
+            await lock.connect(); await lock.startTransaction();
             await lock.query('LOCK TABLE projects IN ACCESS EXCLUSIVE MODE');
             const startedAt=Date.now(); await rejects(bounded(slow.handoverPackage(project.id,acceptance.id,manager),5000),504);
             assert.ok(Date.now()-startedAt<4000,'blocked Project read is canceled/bounded by lock/statement timeout');
-          } finally { await lock.rollbackTransaction(); await lock.release(); }
+          } catch (error) { failure=error; throw error; }
+          finally { await cleanupTestRunner(lock,failure); }
         }
         assert.equal(Number((await db.query('SELECT 1 AS ok'))[0].ok),1,'a later query can use the pool');
         const next=await service.devicesWorkbook(project.id,manager); await next.cleanup();
@@ -382,7 +379,7 @@ test('handover exports: isolated PostgreSQL, HTTP, PDF and XLSX', { timeout: 180
     await runCase('private export connection has server timeouts in actual PostgreSQL startup settings', async () => {
       const probe=new ExportsService(db,new EvidenceStorage(),{handoverTimeoutMs:4000});
       const source=probe.createPackageDataSource(4000);
-      let runner;
+      let runner,failure;
       try {
         await source.initialize();
         runner=source.createQueryRunner();await runner.connect();
@@ -390,9 +387,12 @@ test('handover exports: isolated PostgreSQL, HTTP, PDF and XLSX', { timeout: 180
         const settings=new Map(rows.map(row=>[row.name,row.setting]));
         assert.equal(settings.get('statement_timeout'),'4000');
         assert.equal(settings.get('lock_timeout'),'4000');
-      } finally {
-        if(runner?.isReleased===false) await runner.release();
-        if(source.isInitialized) await source.destroy();
+      } catch (error) { failure=error; throw error; }
+      finally {
+        const errors=[];
+        try { if(runner) await cleanupTestRunner(runner); } catch(error) { errors.push(error); }
+        try { await closeOwnedDataSource(source); } catch(error) { errors.push(error); }
+        if(errors.length) throw new AggregateError(failure?[failure,...errors]:errors,'Export probe cleanup failed',{cause:failure??errors[0]});
       }
     });
 
@@ -601,7 +601,7 @@ test('handover exports: isolated PostgreSQL, HTTP, PDF and XLSX', { timeout: 180
       process.env.DB_NAME = name; process.env.JWT_SECRET = randomBytes(48).toString('hex');
       const { NestFactory } = require('@nestjs/core'); const { JwtService } = require('@nestjs/jwt');
       const { AppModule } = require('../dist/app.module');
-      app = await NestFactory.create(AppModule, { logger: false }); await app.listen(0, '127.0.0.1');
+      app = await NestFactory.create(AppModule, { logger: false }); await app.listen(0, '127.0.0.1'); await verify(app.get(DataSource));
       const base = await app.getUrl(), jwt = app.get(JwtService);
       const get = (url, user) => fetch(base + url, { headers: user ? { Authorization: 'Bearer ' + jwt.sign({ sub: user.id, authVersion: user.authVersion }) } : {} });
       const getAfterSlotRelease=async(url,user)=>{
@@ -848,10 +848,18 @@ test('handover exports: isolated PostgreSQL, HTTP, PDF and XLSX', { timeout: 180
         .map(async x => (await fs.stat(path.join(os.tmpdir(), x))).isDirectory() ? x : null));
       assert.deepEqual(leftovers.filter(Boolean), []);
     });
-  } finally {
-    if (app) await app.close(); if (db.isInitialized) await db.destroy();
+  } catch (error) { failure = error; }
+  finally {
+    const errors = [];
+    try { if (app) await app.close(); } catch (error) { errors.push(error); }
     for (const [key, value] of Object.entries(previous)) if (value === undefined) delete process.env[key]; else process.env[key] = value;
-    if (created) await admin.query(`DROP DATABASE "${name}"`); await admin.end();
-    await fs.rm(root, { recursive: true, force: true });
+    try { if (root) {
+      assert.ok(path.resolve(root).startsWith(path.resolve(os.tmpdir()) + path.sep));
+      assert.ok(path.basename(root).startsWith('elv-export-storage-'));
+      await fs.rm(root, { recursive: true, force: true });
+    } } catch (error) { errors.push(error); }
+    if (errors.length) throw new AggregateError(failure ? [failure, ...errors] : errors, `Export cleanup incomplete: ${root ?? 'storage not created'}`, { cause: failure ?? errors[0] });
   }
+  if (failure) throw failure;
+  });
 });
