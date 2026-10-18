@@ -1,5 +1,5 @@
-import { Body, Controller, Delete, Get, HttpCode, HttpStatus, Param, ParseUUIDPipe, Patch, Post, UseGuards } from '@nestjs/common';
-import { JwtAuthGuard } from '../auth/jwt-auth.guard';
+import { Body, Controller, Delete, Get, HttpCode, HttpStatus, Param, ParseUUIDPipe, Patch, Post, Req, UseGuards } from '@nestjs/common';
+import { AuthenticatedRequest, JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { Roles } from '../auth/roles.decorator';
 import { RolesGuard } from '../auth/roles.guard';
 import { UserRole } from '../users/user-role.enum';
@@ -7,12 +7,13 @@ import { CreateAreaDto, UpdateAreaDto } from './dto/area.dto';
 import { CreateProjectDto, UpdateProjectDto } from './dto/project.dto';
 import { CreateProjectSystemDto, UpdateProjectSystemDto } from './dto/system.dto';
 import { ProjectsService } from './projects.service';
+import { ProjectSummaryService } from './project-summary.service';
 
 @Controller('projects')
 @UseGuards(JwtAuthGuard, RolesGuard)
 @Roles(UserRole.MANAGER, UserRole.TECHNICIAN)
 export class ProjectsController {
-  constructor(private readonly projects: ProjectsService) {}
+  constructor(private readonly projects: ProjectsService, private readonly summary: ProjectSummaryService) {}
 
   @Get()
   listProjects() { return this.projects.listProjects(); }
@@ -23,6 +24,11 @@ export class ProjectsController {
 
   @Get(':id')
   getProject(@Param('id', ParseUUIDPipe) id: string) { return this.projects.getProject(id); }
+
+  @Get(':id/summary')
+  getSummary(@Param('id', ParseUUIDPipe) id: string, @Req() request: AuthenticatedRequest) {
+    return this.summary.get(id, request.user);
+  }
 
   @Patch(':id')
   @Roles(UserRole.MANAGER)

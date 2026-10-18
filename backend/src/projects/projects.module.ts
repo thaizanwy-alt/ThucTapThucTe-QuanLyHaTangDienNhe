@@ -6,11 +6,12 @@ import { ProjectSystem } from './project-system.entity';
 import { Project } from './project.entity';
 import { ProjectsController } from './projects.controller';
 import { ProjectsService } from './projects.service';
+import { ProjectSummaryService } from './project-summary.service';
 
 @Module({
   imports: [TypeOrmModule.forFeature([Project, ProjectArea, ProjectSystem]), AuthModule],
   controllers: [ProjectsController],
-  providers: [ProjectsService],
+  providers: [ProjectsService, ProjectSummaryService],
   exports: [ProjectsService],
 })
 export class ProjectsModule {}
