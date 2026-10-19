@@ -42,6 +42,34 @@ Ngữ cảnh bàn giao: [docs/STATUS.md](docs/STATUS.md). Quy ước làm việc
 
 Backup: dừng API/thao tác ghi, backup PostgreSQL và toàn bộ storage thành một bộ có cùng mốc, rồi mở lại. Restore cả DB và storage trước khi chạy API; đối soát file thiếu/hash và thử download theo quyền. Không đưa backup vào Git. Quy trình backup–restore và crash recovery cần kiểm chứng riêng trên môi trường của bạn; test rollback không thay thế kiểm tra crash thật.
 
+### Kiểm chứng backup–restore local có kiểm soát
+
+Script `backend/scripts/backup-restore-check.cjs` tạo backup **ngoài repo** và restore vào DB/storage tạm mới, không restore đè nguồn, không migration/seed/reset User. Script được chốt cho cluster local đã xác minh (`7628257575938021648`, `electrical_infrastructure`, cổng `55432`, data directory đã quy định trong guard); không đổi guard để vượt một kết quả preflight sai. Backend/Vite và mọi tác vụ ghi nguồn phải tắt trước khi chạy, và giữ tắt trong toàn bộ lượt kiểm chứng. Script không tự dừng/khởi động server local.
+
+Điều kiện: PostgreSQL 18 `pg_dump`/`pg_restore`; Node/dependency và `backend/dist` khớp code hiện hành; Python có pypdf/pdfplumber. Tài khoản DB kiểm chứng cần SELECT, quyền khóa các bảng nguồn, đọc định danh cluster và tạo/xóa DB tạm; đây không phải yêu cầu quyền của tài khoản runtime. Nạp cấu hình nguồn và credentials hiện hành của hai vai trò từ `backend/.env`/môi trường; script không in token/mật khẩu hoặc thay tài khoản nếu login thất bại.
+
+Chạy từ gốc repo trong PowerShell host (biến dưới đây chỉ áp dụng tiến trình hiện tại):
+
+```powershell
+$env:PG_BIN_DIR = '<thu-muc-bin-PostgreSQL-18>'
+$env:EXPORT_PYTHON_BIN = '<python-co-pypdf-va-pdfplumber>'
+$env:ELV_BACKUP_ROOT = '<thu-muc-backup-rieng-ngoai-repo-va-storage>' # optional
+node backend/scripts/backup-restore-check.cjs --preflight # chỉ đọc
+node backend/scripts/backup-restore-check.cjs --execute
+```
+
+Mặc định backup ở `%USERPROFILE%\.codex\backups\elv-<timestamp>-<random>`. Bộ gồm `database.dump`, `database.toc.txt`, toàn bộ `storage/`, `manifest.json`, `manifest.sha256` và `verification.json`. Manifest ghi thời điểm UTC, migration, count/fingerprint tổng hợp từng bảng/sequence, SHA-256/kích thước dump và từng file; không ghi password/hash của từng User. **Dump vẫn chứa dữ liệu nhạy cảm của DB**: bảo vệ thư mục bằng ACL/quyền hệ điều hành và chính sách backup riêng, không đưa vào Git hoặc chia sẻ công khai. Không sao lưu global roles/password PostgreSQL, ACL/owner hay cấu hình server; dump loại owner/ACL và restore dưới tài khoản kiểm chứng.
+
+Script xác nhận không có session nguồn khác/cổng local đang dùng, giữ SHARE lock chặn DML/DDL trên các bảng hiện hữu và dùng snapshot đó cho dump. Hash storage được đối chiếu nguồn → backup → restore và kiểm tra lại nguồn sau smoke. DB restore có name/owner/marker/OID, storage có marker/thư mục riêng; Nest chỉ dùng bản restore/cổng OS cấp. Smoke chỉ đọc: health, login, demo, summary TECHNICIAN, file ghim đã xóa mềm, PDF/ZIP và nội dung/hash các artifact. Không tự sửa fixture nếu thiếu dữ liệu cần kiểm chứng. Mọi backup được giữ, kể cả khi smoke lỗi; script báo lỗi và không coi lượt đó là pass. DB còn session hoặc ownership sai được giữ thay vì cưỡng chế DROP; cần đọc báo cáo cleanup trước khi xử lý thủ công.
+
+Backup root được canonical hóa (kể cả ancestor hiện hữu của đường dẫn chưa tạo) và kiểm tra lại trước khi tạo dữ liệu: không trùng/nằm trong storage nguồn, không chứa storage nguồn, không nằm trong repo; junction/symlink và khác hoa/thường/separator trên Windows không được dùng để vượt guard. Không thay đổi junction/thư mục trong lúc drill chạy.
+
+Trước CREATE, report ghi tên DB dự kiến/phase; nếu CREATE lỗi hoặc đã thành công nhưng ownership chưa xác nhận, script **không đoán để DROP** mà ghi `cleanup.databaseRetained` với tên/phase/trạng thái xác nhận. Cần xác minh catalog độc lập trước xử lý thủ công; không dùng prefix để xóa. Lỗi gốc và lỗi cleanup/ghi `verification.json` được giữ trong cause/AggregateError nội bộ, log/report chỉ có phase/kind/code cho phép, không in message/config/stderr tùy ý. Nếu ghi report thất bại, console vẫn báo thông tin đã lọc và tiến trình trả lỗi; backup không bị xóa.
+
+Regression không chạy backup nguồn: `node --test --test-concurrency=1 --test-reporter=spec --test-timeout=180000 backend/test/backup-restore-check.test.cjs` (đặt `EXPORT_PYTHON_BIN` như trên). Test dùng junction/storage giả, DB tạm được helper bảo vệ và PDF/ZIP tổng hợp; không gọi main khi import script. Assertion ZIP còn đọc text PDF bên trong, ngoài kiểm tra manifest/hash và workbook. Các test fault injection này không thay thế một lượt restore end-to-end hoặc kiểm thử crash.
+
+Kết quả local 2026-10-19: restore thực và smoke API đạt; dữ liệu nguồn không đổi. File mồ côi và file xóa mềm được sao lưu/giữ nguyên, không purge. Đây không phải kiểm chứng phục hồi crash/WAL/PITR, backup online khi vẫn có writer, quyền runtime tối thiểu, ACL/timestamp filesystem hay triển khai trên máy/cluster khác; xem STATUS để biết số liệu và giới hạn cụ thể.
+
 ## Xuất hồ sơ bàn giao (backend)
 
 MANAGER gửi Bearer JWT đến GET `/projects/:projectId/acceptances/:id/export.pdf` (chỉ hồ sơ CONFIRMED), GET `/projects/:projectId/exports/devices.xlsx`, GET `/projects/:projectId/exports/connections.xlsx`. TECHNICIAN không có quyền dùng ba route này. PDF lấy thông tin nghiệp vụ từ snapshot xác nhận, chỉ liệt kê metadata minh chứng; trạng thái đã được thay thế được ghi riêng tại thời điểm xuất. File ghim thiếu, sai SHA-256 hoặc không thể kiểm tra được đánh dấu cảnh báo tương ứng trong PDF; snapshot thiếu/sai schema bị từ chối, không thay bằng dữ liệu hiện tại. PDF không phải tài liệu có chữ ký khách hàng.
