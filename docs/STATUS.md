@@ -1,8 +1,14 @@
 # Trạng thái bàn giao
 
-Cập nhật ngày 18/10/2026. Hướng dẫn cài/chạy: [README.md](../README.md).
+Cập nhật tài liệu ngày 19/10/2026 trên `main 9bef18b`. Hướng dẫn cài/chạy: [README.md](../README.md); kịch bản bàn giao/trình diễn: [DEMO_GUIDE.md](DEMO_GUIDE.md). Các số liệu bên dưới gắn với từng lượt kiểm chứng, không phải truy vấn DB hiện tại.
 
-## Fixture CT-DEMO-ELV-01 hiện tại (17/10)
+## Bàn giao trình diễn
+
+- Guide có luồng chỉ xem khoảng 13 phút trên CT-DEMO-ELV-01, bảng mã fixture đối chiếu seed/lịch sử, nhánh mutation trên Project thử riêng và quy trình backup trước buổi demo. Không suy trạng thái từ mã; đặc biệt TASK-CAM-RETURNED cũ không phải fixture RETURNED hiện được seed quản lý.
+- Mốc mới hơn snapshot 17/10: backup/restore 19/10 ghi 14 migration, 4 Project/4 User và demo V1/file ghim đọc được; giao lại hai TECHNICIAN có API host PASS ngày 18/10 nhưng lượt đó chưa thử UI. Chi tiết và giới hạn còn giữ ở các mục tương ứng bên dưới.
+- Lượt soạn guide chỉ đọc code/README/STATUS, sửa tài liệu và rà diff; không test/build/seed/truy vấn DB hoặc xác minh lại credentials, trạng thái fixture/readiness/port. Không coi kết quả lịch sử là full suite mới trên main; không stage/commit/push.
+
+## Snapshot fixture CT-DEMO-ELV-01 ngày 17/10 (lịch sử)
 
 Chạy `npm run seed:checklists -w backend` (nếu cài máy mới), khởi động backend rồi chạy `npm run seed:demo -w backend`. Script chỉ ghi qua API vào Project có marker `DEMO_SEED:ELV-BUILDING-V1`; preflight mã/field và checkpoint, dừng khi fixture do người dùng sửa lệch kỳ vọng. Cần mật khẩu hai tài khoản demo trong môi trường local; không ghi bí mật vào repo. `DEMO_SECOND_TECHNICIAN_EMAIL` và `DEMO_SECOND_TECHNICIAN_PASSWORD` là cặp tùy chọn để xác minh tài khoản TECHNICIAN active thứ hai đã tồn tại, không tạo/reset tài khoản.
 
@@ -15,11 +21,11 @@ Chạy `npm run seed:checklists -w backend` (nếu cài máy mới), khởi đ�
 | Minh chứng | `demo-archived.png` đã xóa mềm sau khi ghim; `demo-current.pdf`, `demo-closed-issue.png`, `demo-approved-task.png` active. Issue CLOSED và Task APPROVED còn file đọc được nhưng khóa ghi theo backend. Đây là ảnh/PDF giả định, không phải hồ sơ công trường thật. |
 | Nghiệm thu | DEMO-AC-BLOCKED DRAFT có blockers; DEMO-AC-READY DRAFT đủ điều kiện; DEMO-AC-CONFIRMED-V1 → V2 → V3 đều CONFIRMED, replacement chỉ có hiệu lực sau confirm. V1 có file ghim đã xóa mềm ở nguồn; PDF/ZIP vẫn lấy được. |
 
-DB local đúng cluster `7628257575938021648`, 13 migration: demo hiện có 7 Task, 6 phiếu/18 mục, 4 Issue, 4 Evidence (3 active, 1 xóa mềm), 5 Acceptance/3 snapshot. Lần chạy đầu của seed mới dừng giữa chuỗi replacement do lỗi giữ state predecessor; sau sửa, trên DB local chạy tiếp thành công đến V3. Các lần chạy lại, gồm sau bản sửa preflight/metadata evidence, có **mọi bộ đếm tạo/chuyển trạng thái bằng 0**. Chưa có test tự động fault-injection mô phỏng gián đoạn giữa các replacement. Preflight phần workflow hiện chạy trước thao tác ghi của seed nền; fixture lệch phải dừng trước khi ghi. GET trace/rack được seed xác nhận; API thật tải PDF 200 và ZIP 200, mở ZIP/đối chiếu manifest SHA-256 của 4 artifact đạt. Unit seed 15/15, backend 39/39, frontend export 2/2 và build toàn repo exit 0. Dùng `node frontend/test/exports.demo.browser.cjs` để smoke chỉ đọc export trên fixture demo (cần API/Vite, Playwright/Chrome và credential local); wrapper chọn tường minh Project `CT-DEMO-ELV-01` và hồ sơ `DEMO-AC-CONFIRMED-V1`, không cần UUID local, không sửa Project thử khác.
+Ở mốc 17/10, DB local đúng cluster `7628257575938021648`, 13 migration: demo khi đó có 7 Task, 6 phiếu/18 mục, 4 Issue, 4 Evidence (3 active, 1 xóa mềm), 5 Acceptance/3 snapshot. Lần chạy đầu của seed mới dừng giữa chuỗi replacement do lỗi giữ state predecessor; sau sửa, trên DB local chạy tiếp thành công đến V3. Các lần chạy lại, gồm sau bản sửa preflight/metadata evidence, có **mọi bộ đếm tạo/chuyển trạng thái bằng 0**. Chưa có test tự động fault-injection mô phỏng gián đoạn giữa các replacement. Preflight phần workflow hiện chạy trước thao tác ghi của seed nền; fixture lệch phải dừng trước khi ghi. GET trace/rack được seed xác nhận; API thật tải PDF 200 và ZIP 200, mở ZIP/đối chiếu manifest SHA-256 của 4 artifact đạt. Unit seed 15/15, backend 39/39, frontend export 2/2 và build toàn repo exit 0. Dùng `node frontend/test/exports.demo.browser.cjs` để smoke chỉ đọc export trên fixture demo (cần API/Vite, Playwright/Chrome và credential local); wrapper chọn tường minh Project `CT-DEMO-ELV-01` và hồ sơ `DEMO-AC-CONFIRMED-V1`, không cần UUID local, không sửa Project thử khác.
 
 Chrome smoke đầy đủ đã đạt sau khi cô lập chỗ chờ ở bước test click nút disabled và đóng dialog trước khi điều hướng. Browser tải PDF, ZIP và hai XLSX từ API thật, đối chiếu mã Project/hồ sơ, sheet và manifest/hash ZIP; kiểm tra DRAFT không có nút ZIP, hồ sơ lịch sử, TECHNICIAN không có nút và API từ chối 403, response muộn không tải file, object URL được thu hồi và không tràn ngang ở 390 px. Các lỗi 403/404/409/413/503/504, gồm Retry-After, được thử bằng route **giả lập**; chưa tạo lỗi bận/timeout/file ghim hỏng trên API thật. Backend CORS đã expose `Content-Disposition`/`Retry-After` và header được xác nhận trên `/health` local. Chưa kiểm tra trực quan screenshot hoặc toàn bộ thao tác bàn phím.
 
-Giới hạn còn lại: mới có **một** TECHNICIAN active; chưa kiểm thử giao lại giữa hai người. Ngày 17/10/2026 đã dọn đúng 16 Project thử theo danh sách ID/code được duyệt; còn đúng bốn Project được giữ. Toàn bộ file evidence trên disk vẫn được giữ. Các mốc/số liệu ở các mục dưới là lịch sử từng chặng, không phải snapshot hiện tại của CT-DEMO-ELV-01.
+Giới hạn tại mốc 17/10: mới có **một** TECHNICIAN active; chưa kiểm thử giao lại giữa hai người tại mốc đó (kết quả API host mới hơn ở mục ngày 18/10). Ngày 17/10/2026 đã dọn đúng 16 Project thử theo danh sách ID/code được duyệt; còn đúng bốn Project được giữ. Toàn bộ file evidence trên disk vẫn được giữ. Các mốc/số liệu ở các mục dưới là lịch sử từng chặng, không phải snapshot hiện tại của CT-DEMO-ELV-01.
 
 ## Phạm vi
 

@@ -27,7 +27,9 @@ Các route cần phân quyền về sau dùng `@UseGuards(JwtAuthGuard, RolesGua
 
 Frontend mặc định gọi API tại `http://localhost:3000`; có thể đặt `VITE_API_URL` trong `frontend/.env.local` theo `frontend/.env.example` rồi khởi động lại Vite. Không đặt mật khẩu hoặc `JWT_SECRET` trong biến `VITE_*`. Phiên demo local dùng localStorage, kiểm tra `/auth/me` khi tải lại và xóa token khi đăng xuất, hết hạn hoặc nhận 401. API chưa có tên người dùng nên giao diện dùng email để nhận diện tài khoản.
 
-Ngữ cảnh bàn giao: [docs/STATUS.md](docs/STATUS.md). Quy ước làm việc với repo: [AGENTS.md](AGENTS.md).
+Hướng dẫn bật đúng môi trường, fixture và kịch bản trình diễn 10–15 phút: [docs/DEMO_GUIDE.md](docs/DEMO_GUIDE.md). Với máy đã có demo, không chạy lại migration/seed như một bước khởi động hoặc reset; seed tài khoản có thể thay mật khẩu/role/active.
+
+Ngữ cảnh bàn giao và lịch sử kiểm chứng: [docs/STATUS.md](docs/STATUS.md). Quy ước làm việc với repo: [AGENTS.md](AGENTS.md).
 
 ## Minh chứng (backend)
 
