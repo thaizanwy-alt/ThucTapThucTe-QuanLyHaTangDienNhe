@@ -1,0 +1,43 @@
+@startuml UC1
+!include style.iuml
+left to right direction
+skinparam ranksep 24
+title UC1 — Use Case tổng quát
+
+actor "Quản lý\nMANAGER" as manager
+actor "Kỹ thuật viên\nTECHNICIAN" as tech
+
+rectangle "Hệ thống quản lý thi công hạ tầng điện nhẹ" {
+  usecase "Đăng nhập / đổi\nmật khẩu của mình" as auth
+  usecase "Xem công trình / tổng kết\nvà danh mục kỹ thuật" as view
+  usecase "Tra cứu đường dây\nđã khai báo" as trace
+  usecase "Quản lý danh mục\nvà phân công thi công" as manage
+  usecase "Kiểm tra / kiểm tra lại\nvà quản lý lỗi" as inspect
+  usecase "Quản lý nghiệm thu\nvà xuất hồ sơ bàn giao" as handover
+  usecase "Quản lý tài khoản\nTECHNICIAN" as account
+  usecase "Xử lý Task / Issue\nđược giao" as work
+  usecase "Sử dụng minh chứng\ntheo quyền target" as evidence
+  usecase "Đọc tóm tắt nghiệm thu\nCONFIRMED" as summary
+}
+
+manager -- auth
+auth -- tech
+manager -- view
+view -- tech
+manager -- trace
+trace -- tech
+manager -- evidence
+evidence -- tech
+manager -- manage
+manager -- inspect
+manager -- handover
+manager -- account
+work -- tech
+summary -- tech
+
+legend bottom
+  Task/Issue theo người được giao.
+  TECHNICIAN: không API phiếu/Item hoặc DRAFT.
+  Chi tiết quyền: UC2a, UC2b, UC3 và README.
+endlegend
+@enduml

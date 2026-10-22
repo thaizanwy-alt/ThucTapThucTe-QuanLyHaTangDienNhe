@@ -1,0 +1,34 @@
+@startuml KT1
+!include style.iuml
+top to bottom direction
+title KT1 — Kiến trúc logic hệ thống
+
+component "Giao diện React / TypeScript\nSáu thẻ nghiệp vụ + tài khoản" as web
+
+rectangle "Backend NestJS\nNguyên khối phân module" as backend {
+  component "API: controller + DTO validation\nJWT guard · RolesGuard" as api
+  component "Service nghiệp vụ\nDanh mục / rack / đấu nối / trace\nTask / kiểm tra / lỗi / minh chứng\nNghiệm thu / snapshot / tổng kết" as business
+  component "TypeORM / EntityManager\nTransaction + khóa" as orm
+  component "Service / renderer export\nPDF snapshot · XLSX hiện tại\nZIP + SHA-256" as export
+  api --> business
+  api --> export
+  business --> orm
+  export --> orm
+  business -[hidden]right-> export
+}
+
+database "PostgreSQL\nNghiệp vụ + metadata\nSchema qua migration" as db
+folder "Evidence storage ngoài repo\nKhông public static\nFile ghim qua API có quyền" as storage
+
+web <--> backend : HTTP JSON / multipart / binary\nBearer JWT cho API được bảo vệ
+orm --> db : SQL
+business --> storage : EvidenceStorage
+export -down-> storage : File ghim
+db -[hidden]right-> storage
+
+legend bottom
+  JWT + quyền resource; schema qua migration.
+  Không microservices hoặc queue export.
+  Worker và file tạm: xem KT2.
+endlegend
+@enduml

@@ -1,0 +1,32 @@
+@startuml UC2a
+!include style.iuml
+left to right direction
+skinparam ranksep 24
+title UC2a — MANAGER: danh mục và tài khoản
+
+actor "Quản lý\nMANAGER" as manager
+rectangle "Hệ thống quản lý thi công hạ tầng điện nhẹ" {
+  usecase "Xem / tạo / sửa công trình\nXem tổng kết toàn Project" as project
+  usecase "Xem / tạo / sửa / xóa\nArea và System" as structure
+  usecase "Xem / tạo / sửa / xóa Device\nGắn nhiều System" as device
+  usecase "Cấu hình MAIN / SUB\nArea phục vụ và bố trí U / ZERO_U" as rack
+  usecase "Khai báo mạng CAMERA / AP\nIP / MAC · STATIC / DHCP" as profile
+  usecase "Quản lý cổng và dây\nTạo / ngắt / rewire; tra cứu trace" as connect
+  usecase "Khai báo VLAN / PoE\ntrên cổng SWITCH" as metadata
+  usecase "Xem / tạo TECHNICIAN\nReset mật khẩu; bật / tắt tài khoản" as users
+}
+manager -- project
+manager -- structure
+manager -- device
+manager -- rack
+manager -- profile
+manager -- connect
+manager -- metadata
+manager -- users
+
+legend bottom
+  MAIN/SUB không khẳng định có dây uplink.
+  Không xóa User/đổi role; ghi có điều kiện.
+  Ràng buộc tài khoản/danh mục: xem README.
+endlegend
+@enduml

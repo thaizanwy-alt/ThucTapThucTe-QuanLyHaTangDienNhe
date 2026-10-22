@@ -1,0 +1,28 @@
+@startuml KT2
+!include style.iuml
+top to bottom direction
+title KT2 — Mô hình triển khai demo local
+
+node "Trình duyệt\nReact SPA\nPhiên demo: localStorage" as browser
+node "Frontend: Vite dev server\nlocalhost:5173" as frontend
+node "Backend: Node.js / NestJS\nlocalhost:3000\nGET /health" as backend
+node "Tiến trình con: XLSX worker\nTimeout + V8 heap limit" as child
+database "PostgreSQL 18\n127.0.0.1:55432\nelectrical_infrastructure" as pg
+folder "Ổ đĩa local" {
+  artifact "Evidence storage\nEVIDENCE_STORAGE_DIR\nNgoài repo; không public static" as files
+  artifact "Export tạm ngoài repo\nPDF / XLSX / ZIP; có cleanup" as temp
+}
+browser -right-> frontend : HTML / JS / CSS
+browser --> backend : API: VITE_API_URL\nHTTP + Bearer / Blob
+backend --> pg : SQL / transaction
+backend --> files : Đọc / ghi file
+backend -right-> child : Spawn
+child --> temp : XLSX
+backend --> temp : PDF / ZIP
+
+legend bottom
+  Cùng máy Windows; cổng có thể cấu hình.
+  Pool ZIP riêng; heap limit không phải RSS.
+  Chi tiết timeout và storage: xem README.
+endlegend
+@enduml

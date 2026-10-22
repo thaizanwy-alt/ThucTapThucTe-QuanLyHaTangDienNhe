@@ -1,0 +1,36 @@
+@startuml UC3
+!include style.iuml
+left to right direction
+skinparam ranksep 24
+title UC3 — TECHNICIAN: đọc và xử lý việc được giao
+
+actor "Kỹ thuật viên\nTECHNICIAN" as tech
+rectangle "Hệ thống quản lý thi công hạ tầng điện nhẹ" {
+  usecase "Đăng nhập / xem tài khoản mình\nĐổi mật khẩu của mình" as auth
+  usecase "Xem Project / Area / System\nDevice / rack / hồ sơ mạng" as catalog
+  usecase "Xem cổng / dây; tra cứu\nđường đi outlet / CAMERA / AP" as trace
+  usecase "Xem tổng kết theo quyền\nTask và Issue của tôi; inventory" as summary
+  usecase "Xem Task được giao\nMọi trạng thái" as viewTasks
+  usecase "Bắt đầu Task được giao\nASSIGNED hoặc RETURNED" as start
+  usecase "Gửi Task duyệt từ IN_PROGRESS\nBắt buộc completionNote" as submit
+  usecase "Xem / bắt đầu Issue được giao\nBáo đã sửa với ghi chú bắt buộc" as issue
+  usecase "Đọc minh chứng Task / Issue được giao\nUpload; sửa / xóa mềm file mình tải" as evidence
+  usecase "Đọc summary CONFIRMED\nHiện hành / đã thay thế" as acceptance
+}
+tech -- auth
+tech -- catalog
+tech -- trace
+tech -- summary
+tech -- viewTasks
+tech -- start
+tech -- submit
+tech -- issue
+tech -- evidence
+tech -- acceptance
+
+legend bottom
+  Chỉ Task/Issue hiện được giao; file theo quyền.
+  Không phiếu/Item, file nghiệm thu hoặc export.
+  Khóa trạng thái và quyền ghi: xem README.
+endlegend
+@enduml
