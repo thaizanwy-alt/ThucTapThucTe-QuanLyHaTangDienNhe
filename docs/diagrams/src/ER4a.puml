@@ -1,0 +1,44 @@
+@startuml
+!include erd-style.iuml
+top to bottom direction
+title ER4a - Evidence: đúng một trong ba target
+entity "project_tasks\n(tham chiếu)" as T {
+  id : uuid [PK]
+  project_id : uuid
+}
+entity "inspection_items\n(tham chiếu)" as IT {
+  id : uuid [PK]
+  project_id : uuid
+}
+entity "remediation_issues\n(tham chiếu)" as IS {
+  id : uuid [PK]
+  project_id : uuid
+}
+entity "users\n(tham chiếu)" as U {
+  id : uuid [PK]
+}
+entity "evidence_attachments" as E {
+  id : uuid [PK]
+  project_id : uuid [FK -> projects]
+  task_id : uuid? [FK*]
+  inspection_item_id : uuid? [FK*]
+  issue_id : uuid? [FK*]
+  uploaded_by_id : uuid [FK]
+  deleted_by_id : uuid? [FK]
+  storage_key : varchar [UQ]
+  {field} sha256, fingerprint : varchar(64)
+  {field} idempotency_key : varchar(128)
+  deleted_at : timestamptz?
+  version : integer
+}
+T |o--o{ E : task_id?
+IT |o--o{ E : inspection_item_id?
+IS |o--o{ E : issue_id?
+E }o--|| U : uploaded_by_id
+E }o--o| U : deleted_by_id
+legend bottom
+  ? = NULL; FK* ghép cùng Project với từng target_id.
+  DB CHECK XOR: đúng một FK target khác null.
+  DB: UQ idempotency/CHECK xóa mềm; service: quota/quyền.
+endlegend
+@enduml

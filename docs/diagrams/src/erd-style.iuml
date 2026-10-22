@@ -1,0 +1,12 @@
+' ERD only: leave the architecture / Use Case render unchanged.
+!include style.iuml
+hide circle
+hide methods
+skinparam classAttributeIconSize 0
+skinparam classFontSize 18
+skinparam classAttributeFontSize 18
+skinparam classBackgroundColor #EFF5F8
+skinparam classBorderColor #476579
+skinparam noteFontSize 18
+skinparam nodesep 30
+skinparam ranksep 40

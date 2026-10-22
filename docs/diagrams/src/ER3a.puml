@@ -1,0 +1,42 @@
+@startuml
+!include erd-style.iuml
+top to bottom direction
+title ER3a - Task, người được giao và người duyệt
+entity "users\n(tham chiếu)" as U {
+  id : uuid [PK]
+}
+entity "projects\n(tham chiếu)" as P {
+  id : uuid [PK]
+}
+entity "project_systems\n(tham chiếu)" as S {
+  id : uuid [PK]
+  project_id : uuid
+}
+entity "project_areas\n(tham chiếu)" as A {
+  id : uuid [PK]
+  project_id : uuid
+}
+entity "project_tasks" as T {
+  id : uuid [PK]
+  project_id : uuid [FK]
+  system_id : uuid [FK*]
+  area_id : uuid? [FK*]
+  assignee_id : uuid [FK]
+  reviewed_by_id : uuid? [FK]
+  code, title : varchar
+  status : enum
+  completion_note, return_reason : text?
+  submitted_at, reviewed_at : timestamptz?
+}
+P ||--o{ T
+S ||--o{ T
+A |o--o{ T
+U ||--o{ T : assignee_id
+U |o--o{ T : reviewed_by_id
+legend bottom
+  ? = NULL; FK* cùng Project. DB: UQ (project_id,code).
+  DB: CHECK completion_note khi SUBMITTED/APPROVED; lý do khi RETURNED.
+  Service: assignee là TECHNICIAN active; trạng thái/ownership có kiểm tra.
+  Task không có cột version hoặc FK trực tiếp Inspection/Issue.
+endlegend
+@enduml

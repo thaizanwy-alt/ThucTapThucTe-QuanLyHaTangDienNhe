@@ -1,0 +1,29 @@
+@startuml
+!include erd-style.iuml
+top to bottom direction
+title ER4b-2 - Snapshot và chuỗi replacement
+entity "project_acceptances\n(phần bổ sung ER4b-1)" as A {
+  id : uuid [PK]
+  project_id, system_id : uuid
+  status : enum
+  replaces_id : uuid? [FKps]
+  replacement_reason : text?
+  confirmed_at : timestamptz?
+}
+entity "acceptance_snapshots" as SN {
+  acceptance_id : uuid [PK,FK*]
+  project_id : uuid [FK*]
+  schema_version : integer
+  {field} source_fingerprint : varchar(64)
+  content : jsonb
+}
+A ||--o| SN : DB: 0..1 snapshot
+A |o--o{ A : bản gốc / bản thay thế
+legend bottom
+  ? = NULL. FKps = (project_id,system_id,replaces_id) -> cùng bảng.
+  DB: partial UQ replaces_id khi CONFIRMED; nháp thay thế có thể nhiều.
+  DB: CHECK lý do/không tự trỏ; JSON object và schema_version=1.
+  Service: CONFIRMED có snapshot, bất biến; chỉ thay bản mới nhất.
+  content là dữ liệu sao chép, không FK tới entity lịch sử bên trong JSON.
+endlegend
+@enduml

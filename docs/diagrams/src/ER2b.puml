@@ -1,0 +1,42 @@
+@startuml
+!include erd-style.iuml
+top to bottom direction
+title ER2b - Port, dây vật lý và hai endpoint
+entity "project_devices\n(tham chiếu)" as D {
+  id : uuid [PK]
+  project_id : uuid
+}
+entity "device_ports" as P {
+  id : uuid [PK]
+  project_id : uuid [FK*]
+  device_id : uuid [FK*]
+  code : varchar
+  description : text?
+  access_vlan_id : integer?
+  poe_enabled : boolean?
+}
+entity "physical_connections" as C {
+  id : uuid [PK]
+  project_id : uuid [FK -> projects]
+  {field} kind : enum (FIXED/PATCH)
+  label : varchar?
+  description : text?
+  version : integer
+}
+entity "connection_endpoints" as E {
+  connection_id : uuid [PK,FK*]
+  end : enum A/B [PK]
+  project_id : uuid [FK*]
+  port_id : uuid [FK*]
+  side : enum FRONT/REAR/SINGLE
+}
+D ||--o{ P
+C "1" -- "2" E : tại COMMIT
+P "1" -- "0..3" E : theo schema DB
+legend bottom
+  ? = NULL. FK* ghép cùng Project; không lặp cạnh project_id.
+  DB: UQ (project_id,port_id,side); trigger đủ A/B tại COMMIT.
+  DB: VLAN 1..4094 hoặc null. Service: mặt cổng theo loại, VLAN/PoE chỉ SWITCH.
+  Service: CAMERA/AP tối đa 1 port; khóa Device chống tranh tạo.
+endlegend
+@enduml

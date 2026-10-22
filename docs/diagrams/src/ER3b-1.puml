@@ -1,0 +1,52 @@
+@startuml
+!include erd-style.iuml
+top to bottom direction
+title ER3b-1 - Mẫu có revision và mục kiểm tra sao chép
+entity "checklist_templates" as T {
+  id : uuid [PK]
+  code, name : varchar
+  category : enum
+  revision : integer
+  is_active : boolean
+}
+entity "checklist_template_items" as TI {
+  id : uuid [PK]
+  template_id : uuid [FK]
+  code, title : varchar
+  instruction : text?
+  sort_order : integer
+}
+entity "project_inspections" as I {
+  id : uuid [PK]
+  project_id : uuid [FK -> projects]
+  system_id : uuid [FK* -> System]
+  area_id : uuid? [FK* -> Area]
+  device_id : uuid? [FK* -> Device]
+  template_id : uuid [FKr]
+  template_revision : integer [FKr]
+  created_by_id : uuid [FK -> users]
+  code, title : varchar
+}
+entity "inspection_items" as IT {
+  id : uuid [PK]
+  project_id : uuid [FK*]
+  inspection_id : uuid [FK*]
+  code, title : varchar
+  instruction, note : text?
+  sort_order : integer
+  result : enum
+  checked_by_id : uuid? [FK -> users]
+  checked_at : timestamptz?
+  version : integer
+}
+T ||-right-o{ TI
+T ||-down-o{ I : FKr (id,revision)
+I ||-right-o{ IT
+TI .down.> IT : sao chép nội dung (service)
+legend bottom
+  ? = NULL; FK* cùng Project; FKr = (template_id,template_revision).
+  DB: area_id hoặc device_id hoặc cả hai null; không đồng thời.
+  DB không có FK Item -> TemplateItem; nét chấm là sao chép.
+  Service: category khớp System; Device thuộc System lúc tạo.
+endlegend
+@enduml

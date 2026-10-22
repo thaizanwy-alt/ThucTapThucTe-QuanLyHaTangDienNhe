@@ -1,4 +1,4 @@
-# Sơ đồ kiến trúc và Use Case
+# Sơ đồ kiến trúc, Use Case và ERD
 
 Mốc đối chiếu: `main`, HEAD `3fa0f5c`, ngày 22/10/2026. Đây là mô hình của chức năng **đã triển khai trong source**, không phải đề xuất mở rộng. Không kiểm tra server hoặc dữ liệu DB local trong lượt này.
 
@@ -13,7 +13,7 @@ Mốc đối chiếu: `main`, HEAD `3fa0f5c`, ngày 22/10/2026. Đây là mô h�
 | UC2b | Use Case MANAGER: quản lý thi công, kiểm tra và bàn giao | Task, checklist/Issue, evidence, acceptance/snapshot và export. | [Nguồn](src/UC2b.puml) · [SVG](rendered/UC2b.svg) · [PNG](rendered/UC2b.png) | A4 dọc; rộng 125 mm, cao 243,11 mm. |
 | UC3 | Use Case TECHNICIAN: tra cứu và xử lý công việc được giao | Quyền đọc danh mục/trace, Task/Issue của mình, evidence theo ownership, summary CONFIRMED và tài khoản mình. | [Nguồn](src/UC3.puml) · [SVG](rendered/UC3.svg) · [PNG](rendered/UC3.png) | A4 dọc; cao 249 mm, rộng 115,95 mm. |
 
-Nên đưa KT1, KT2, UC1 vào thân báo cáo; UC2a, UC2b, UC3 vào phần phân tích chi tiết hoặc phụ lục. Chưa tạo ERD, state, activity, sequence hoặc DFD trong nhóm này.
+Nên đưa KT1, KT2, UC1 vào thân báo cáo; UC2a, UC2b, UC3 vào phần phân tích chi tiết hoặc phụ lục. Nhóm ERD bổ sung có mốc đối chiếu riêng ở cuối tài liệu; chưa tạo state, activity, sequence hoặc DFD.
 
 ## Kích thước chèn và QA A4
 
@@ -118,3 +118,103 @@ git diff --check
 Ngày 22/10/2026 đã tạo nhóm hình ban đầu và kiểm tra từng PNG. Ngày **23/10/2026** đã sửa hai finding: tách quyền xem/bắt đầu Task trong UC3; đặt legend 18 px thực tế, rút gọn còn ba dòng mỗi hình, chuyển giải thích dài và nguồn code sang README, bỏ footer nhỏ khỏi ảnh. Cả sáu SVG/PNG đã render lại local, PNG 192 dpi; đã mở SVG trong Chrome local và mở xem PNG, không chỉ kiểm tra cú pháp. PDF QA sáu trang dùng PNG độ phân giải cao ở đúng kích thước bảng trên; đã render bằng Poppler và mở xem từng trang, không thấy cắt/tràn hoặc đè vùng chú thích. SVG giữ text vector, hiển thị còn phụ thuộc font máy đọc. PDF QA và script/ảnh kiểm tra đều ở ngoài repo, không phải tài liệu cuối và không thuộc phạm vi stage.
 
 Không chạy test/build ứng dụng hoặc truy cập DB trong lượt tạo sơ đồ. Đây không phải kết quả smoke/API mới; không thay thế lịch sử kiểm chứng ở STATUS. Không thay README gốc, STATUS, code ứng dụng hoặc cấu hình môi trường.
+
+## Nhóm ERD — schema sau migration
+
+Mốc đối chiếu ERD: `main`, HEAD `8c0d5d2`, ngày **23/10/2026**. Đã đọc toàn bộ 15 file entity (22 bảng nghiệp vụ) và 14 migration theo thứ tự dưới đây, cùng service khi cần phân biệt quy tắc nghiệp vụ. Đây là schema cuối **suy ra từ source sau khi áp đủ migration up**, không phải xác nhận schema/dữ liệu DB đang chạy. `backend/src/database/data-source.ts` đăng ký các entity/migration và giữ `synchronize: false`.
+
+Tám nhóm yêu cầu được trình bày thành **11 hình**: ER2a, ER3b và ER4b mỗi nhóm tách hai trang để giữ chữ đọc được. ER0 phù hợp thân báo cáo; ER1 và các ER chi tiết dùng trong chương thiết kế dữ liệu hoặc phụ lục. Không ghép nhiều ER chi tiết rồi thu nhỏ vào một trang.
+
+| Mã | Chú thích đề xuất / mục đích | Nguồn / SVG / PNG |
+| --- | --- | --- |
+| ER0 | Quan hệ nghiệp vụ chính: Project, danh mục kỹ thuật, thi công, kiểm tra, minh chứng và nghiệm thu; chỉ entity/quan hệ chính. | [Nguồn](src/ER0.puml) · [SVG](rendered/ER0.svg) · [PNG](rendered/ER0.png) |
+| ER1 | User, Project, Area và System; không có bảng thành viên User–Project. | [Nguồn](src/ER1.puml) · [SVG](rendered/ER1.svg) · [PNG](rendered/ER1.png) |
+| ER2a-1 | Device, nơi đặt, rack quản lý và bố trí U trên chính bảng Device. | [Nguồn](src/ER2a-1.puml) · [SVG](rendered/ER2a-1.svg) · [PNG](rendered/ER2a-1.png) |
+| ER2a-2 | Liên kết nhiều System, Area phục vụ của rack và NetworkProfile. | [Nguồn](src/ER2a-2.puml) · [SVG](rendered/ER2a-2.svg) · [PNG](rendered/ER2a-2.png) |
+| ER2b | Cổng, dây vật lý và hai endpoint; phân biệt cardinality DB với mặt cổng theo loại thiết bị. | [Nguồn](src/ER2b.puml) · [SVG](rendered/ER2b.svg) · [PNG](rendered/ER2b.png) |
+| ER3a | Task, System/Area, người được giao và người duyệt. | [Nguồn](src/ER3a.puml) · [SVG](rendered/ER3a.svg) · [PNG](rendered/ER3a.png) |
+| ER3b-1 | Mẫu có revision, phiếu và nội dung mục được sao chép. | [Nguồn](src/ER3b-1.puml) · [SVG](rendered/ER3b-1.svg) · [PNG](rendered/ER3b-1.png) |
+| ER3b-2 | Lịch sử Issue của Item và quan hệ phân công/kiểm tra lại. | [Nguồn](src/ER3b-2.puml) · [SVG](rendered/ER3b-2.svg) · [PNG](rendered/ER3b-2.png) |
+| ER4a | Evidence: ba FK target nullable, CHECK XOR, người tải/xóa và xóa mềm. | [Nguồn](src/ER4a.puml) · [SVG](rendered/ER4a.svg) · [PNG](rendered/ER4a.png) |
+| ER4b-1 | Hồ sơ nghiệm thu và các bảng lựa chọn phiếu/evidence. | [Nguồn](src/ER4b-1.puml) · [SVG](rendered/ER4b-1.svg) · [PNG](rendered/ER4b-1.png) |
+| ER4b-2 | Snapshot JSON sao chép và chuỗi hồ sơ thay thế. | [Nguồn](src/ER4b-2.puml) · [SVG](rendered/ER4b-2.svg) · [PNG](rendered/ER4b-2.png) |
+
+### Ký hiệu, cardinality và phần lược bỏ
+
+- `[PK]` chỉ cột tham gia khóa chính; nhiều cột cùng nhãn là **một PK ghép**, không phải mỗi cột unique riêng. `[UQ]` chỉ unique; các unique ghép/partial được giải thích trong legend và dưới đây. `?` là nullable; cột không có `?` là NOT NULL. Dòng `code, name` là cách gộp hai cột để tiết kiệm chỗ, không phải tên một cột DB.
+- `[FK]` là FK đơn; `[FK*]` là thành phần FK ghép với `project_id` để giữ cùng Project. `[FKr]` là cặp `(template_id,template_revision)` tới `(id,revision)` của template. `[FKps]` là `(project_id,system_id,replaces_id)` tới cùng bảng acceptance. Không lặp tất cả cạnh tới Project để tránh rối; field vẫn ghi FK. Các bảng “tham chiếu” chỉ lặp phần khóa cần thiết, không phải định nghĩa bảng mới.
+- Đường liền/crow's foot biểu diễn FK thật: một parent có `0..*` child; mỗi child có một parent hoặc `0..1` nếu FK nullable. Riêng ER2b ghi số: một connection phải có **2 endpoint tại COMMIT**; một port có tối đa **3 endpoint theo schema DB** (ba giá trị side, unique từng side), còn service giới hạn mặt hợp lệ theo loại thiết bị. Không hiểu `0..3` là API cho phép cả ba mặt trên mọi loại.
+- Nét chấm ER0 là N:N **qua bảng nối có tên trên cạnh**; nét chấm ER3b-1 là sao chép nội dung bằng service, **không phải FK Item → TemplateItem**. Những FK tới context không vẽ thành hộp vẫn ghi đích tại field: System=`project_systems`, Area=`project_areas`, Device=`project_devices`, User=`users`.
+- Tất cả FK thể hiện dùng `ON DELETE RESTRICT`; không suy rằng mọi FK đều có `ON UPDATE RESTRICT` (đa số dùng mặc định NO ACTION). FK nullable ghép không biến cột target nullable thành bắt buộc; `project_id` vẫn NOT NULL.
+- ER0 cố ý lược Area, port, Item/Issue, snapshot và phần lớn field. Toàn bộ 22 bảng nghiệp vụ xuất hiện trong các ER chi tiết; bảng `migrations` là hạ tầng, không đưa vào ERD nghiệp vụ. Sequence, enum type và trigger là object DB, không vẽ thành entity. Không có bảng Rack, Placement, UserProject, export job hoặc FK Task → Inspection/Issue.
+- Các hình chi tiết ưu tiên khóa, field trạng thái/phiên bản và nullable ảnh hưởng quan hệ; lược phần lớn `created_at`/`updated_at`, độ dài varchar không thiết yếu, index phục vụ truy vấn và một số field mô tả. User có `password_hash` NOT NULL nhưng được lược khỏi hình; không có giá trị hash/credentials trong tài liệu. Device còn các field mô tả/thông tin tùy chọn, không phải mọi cột đều được liệt kê ở ER2a-1.
+- ER4a lược `original_name varchar(255) NOT NULL`, `mime_type varchar NOT NULL`, `size_bytes integer NOT NULL`, `caption text NULL`, `delete_reason text NULL`, `created_at timestamptz NOT NULL`. Metadata này không tạo FK. Storage key là **tên cột schema**, không phải đường dẫn hoặc giá trị storage thật. ER4b-1/2 là hai phần của cùng bảng acceptance; các field ở phần bổ sung không thay thế phần trước.
+
+### Nguồn entity và service theo hình
+
+Đường dẫn tính từ `backend/src/`:
+
+| Hình | Entity | Service để đối chiếu quy tắc không suy từ FK |
+| --- | --- | --- |
+| ER0, ER1 | `users/user.entity.ts`; `projects/project.entity.ts`, `project-area.entity.ts`, `project-system.entity.ts` | `projects/projects.service.ts`, `users/users.service.ts` |
+| ER2a-1/2 | `devices/project-device.entity.ts`, `project-device-system.entity.ts`, `rack-served-area.entity.ts`, `device-network-profile.entity.ts` | `devices/devices.service.ts`, `racks.service.ts` |
+| ER2b | `connections/device-port.entity.ts`, `physical-connection.entity.ts`, `connection-endpoint.entity.ts` | `connections/connections.service.ts` |
+| ER3a | `tasks/project-task.entity.ts` | `tasks/tasks.service.ts` |
+| ER3b-1/2 | `inspections/inspection.entities.ts` (5 entity) | `inspections/inspections.service.ts` |
+| ER4a | `evidence/evidence.entity.ts` | `evidence/evidence.service.ts`, `evidence.storage.ts` |
+| ER4b-1/2 | `acceptances/acceptance.entities.ts` (4 entity) | `acceptances/acceptances.service.ts` |
+
+### Migration đã đối chiếu theo thứ tự áp dụng
+
+Tất cả file trong `backend/src/database/migrations/`. Những migration sau **bổ sung/sửa ràng buộc trước**, không được chỉ đọc migration tạo bảng hoặc chỉ decorator để kết luận schema cuối.
+
+| Thứ tự | File | Ảnh hưởng chính tới ERD |
+| --- | --- | --- |
+| 1 | `1790000000000-CreateUsers.ts` | User, email unique, CHECK role. |
+| 2 | `1791000000000-CreateProjectStructure.ts` | Project/Area/System; parent Area là FK đơn `parent_id → id`; unique code theo Project. |
+| 3 | `1792000000000-CreateProjectTasks.ts` | Task; FK System/Area cùng Project, assignee/reviewer; CHECK trạng thái/ghi chú. |
+| 4 | `1793000000000-CreateProjectDevices.ts` | Device; self-FK rack, FK Area và bảng nhiều System; các candidate key `(project_id,id)`. |
+| 5 | `1794000000000-CreateDeviceConnections.ts` | Port/connection/endpoint; PK `(connection_id,end)`, unique mặt và unique cặp connection/port. |
+| 6 | `1795000000000-EnforceConnectionEndpointPair.ts` | Preflight; constraint trigger deferred bảo đảm đủ A/B ở COMMIT, bỏ qua connection đã xóa hợp lệ. |
+| 7 | `1796000000000-AddDeviceNetworkProfileAndPortMetadata.ts` | NetworkProfile; CHECK mode/IPv4/MAC; IP không unique; VLAN/PoE nullable trên port. |
+| 8 | `1797000000000-AddRackLayout.ts` | Mở rộng enum Device; role/parent/U; served Area; GiST exclusion và trigger layout. |
+| 9 | `1798000000000-EnforceRackLayoutIntegrity.ts` | Sửa CHECK mount chống NULL lọt qua; trigger deferred kiểm tra loại rack phục vụ Area. |
+| 10 | `1799000000000-EnforceRackServedAreaForeignKey.ts` | Khóa bảng trước preflight; `rack_type` cố định RACK; unique `(project_id,id,type)` và FK ghép phân biệt type, chống race đổi type. FK/trigger cũ vẫn tồn tại. |
+| 11 | `1800000000000-CreateInspections.ts` | 5 bảng; FK template/revision, scope; Item; Issue và partial unique lỗi chưa CLOSED. |
+| 12 | `1801000000000-CreateEvidenceAttachments.ts` | Evidence, 3 FK target cùng Project, XOR, idempotency, CHECK file/xóa mềm; candidate key Task/Issue. |
+| 13 | `1802000000000-CreateProjectAcceptances.ts` | Acceptance, 2 bảng lựa chọn, snapshot; replacement cùng Project/System, partial unique khi CONFIRMED; candidate key Evidence. |
+| 14 | `1803000000000-AddUserAccountSecurity.ts` | mustChangePassword/authVersion/version; CHECK và unique lower(email), giữ dữ liệu User hiện có. |
+
+### DB cưỡng chế và service kiểm tra
+
+- **Area:** DB kiểm tra enum, sort và FK parent tồn tại; parent FK không ghép Project. Cùng Project, ROOM cần FLOOR và FLOOR không có parent được `ProjectsService` kiểm tra, không gán nhầm cho FK.
+- **Device/rack:** DB có CHECK vị trí/role/mount, FK parent cùng Project, exclusion chống chồng khoảng U, trigger kiểm tra capacity/layout. Mount null yêu cầu tọa độ U null; U/ZERO_U đều cần height không null theo CHECK đã sửa; chỉ PDU được ZERO_U. `rack_served_areas.rack_type` NOT NULL/default/CHECK RACK cùng FK `(project_id,rack_id,rack_type)` cưỡng chế đúng loại, kể cả đổi type đồng thời. FK `rack_id` chứa Device **không tự là FK phân biệt loại**; service kiểm tra rack đích. `effectiveAreaId` là suy ra, không có cột đó. Area phục vụ tường minh; không tự mở rộng FLOOR thành ROOM; MAIN/SUB là quản lý, không tạo uplink.
+- **Network/port:** DB có CHECK IPv4/mode/MAC, VLAN null hoặc 1–4094 và boolean PoE nullable; IP trùng không bị unique. NetworkProfile chỉ CAMERA/AP và VLAN/PoE khác null chỉ trên SWITCH là quy tắc service, không có DB type constraint tương ứng. CAMERA/AP tối đa một port được service khóa Device và đếm, không phải partial unique của DB. `false` không đồng nghĩa null.
+- **Task/Issue:** DB kiểm tra trạng thái, ghi chú/thời điểm cần thiết và FK User; active/role/ownership, chuyển trạng thái và thứ tự khóa do service. Task không có cột version. Issue có partial unique `item_id WHERE status <> 'CLOSED'`: nhiều lỗi lịch sử nhưng tối đa một lỗi chưa đóng. FAIL/tạo lỗi và recheck Item/Issue là transaction nghiệp vụ; resolve không tự đổi FAIL thành PASS.
+- **Template/inspection:** FK `(template_id,template_revision)` giữ revision; Item chứa nội dung sao chép, không FK tới mục mẫu. CHECK scope cho Area hoặc Device hoặc cả hai null, không đồng thời. Khớp category/System và Device thuộc System được kiểm tra lúc tạo bằng service, không tạo FK lịch sử tới bảng liên kết Device–System.
+- **Evidence:** DB CHECK tương đương `(task_id IS NOT NULL)::int + (inspection_item_id IS NOT NULL)::int + (issue_id IS NOT NULL)::int = 1`, cùng ba FK nullable ghép Project. Unique idempotency là `(project_id,uploaded_by_id,idempotency_key)`; storage key unique. DB giới hạn MIME JPEG/PNG/PDF, size_bytes từ 1 byte đến 10 MiB (10.485.760 byte), định dạng hash/key, caption và bộ field xóa mềm. Quyền/khóa trạng thái, quota 20 active và fingerprint file/metadata do service; không mô tả MIME/signature là quét mã độc. Disk không phải một bảng hay FK.
+- **Acceptance:** DB giữ FK lựa chọn cùng Project, CHECK status/actor/thời điểm, reason đi cùng replaces_id và không tự tham chiếu. FK replacement còn ghép System. Có thể nhiều DRAFT thay thế; partial unique chỉ cho một replacement CONFIRMED trực tiếp. Latest-chain, cùng System/phạm vi của các lựa chọn, PASS/Issue CLOSED, file active/hash, pin và bất biến sau confirm do service. DB cho `0..1` snapshot mỗi acceptance; service tạo đúng một khi confirm. JSON `content` là bản sao dữ liệu với CHECK object/schema_version=1, **không có FK bên trong tới từng entity lịch sử**. Không tự đổi Project.status hoặc khẳng định khách hàng đã ký.
+
+### Kích thước A4 và kết quả QA ERD
+
+Cả 11 hình dùng **A4 dọc**, mỗi hình một trang, cùng vùng QA như nhóm trước: đỉnh hình 18 mm, dải chú thích cao 8 mm cách đáy 18 mm, cách hình ít nhất 4 mm. Khóa tỉ lệ và đặt đúng chiều được chỉ định; không dùng Fit-to-page hoặc thu nhỏ để ghép hình.
+
+| Hình | SVG viewBox | Chiều đặt | Kích thước thực rộng × cao | Chữ nhỏ nhất gồm legend |
+| --- | --- | --- | --- | --- |
+| ER0 | 638 × 1086 | Cao 240 mm | 140,99 × 240,00 mm | 11,28 pt |
+| ER1 | 734 × 956 | Rộng 170 mm | 170,00 × 221,42 mm | 11,82 pt |
+| ER2a-1 | 799 × 997 | Rộng 170 mm | 170,00 × 212,13 mm | 10,86 pt |
+| ER2a-2 | 816 × 751 | Rộng 170 mm | 170,00 × 156,46 mm | 10,63 pt |
+| ER2b | 717 × 1117 | Cao 245 mm | 157,26 × 245,00 mm | 11,19 pt |
+| ER3a | 733 × 935 | Rộng 170 mm | 170,00 × 216,85 mm | 11,83 pt |
+| ER3b-1 | 750 × 1036 | Rộng 170 mm | 170,00 × 234,83 mm | 11,57 pt |
+| ER3b-2 | 640 × 1259 | Cao 249 mm | 126,58 × 249,00 mm | 10,09 pt |
+| ER4a | 598 × 1198 | Cao 245 mm | 122,30 × 245,00 mm | 10,43 pt |
+| ER4b-1 | 800 × 1116 | Rộng 170 mm | 170,00 × 237,15 mm | 10,84 pt |
+| ER4b-2 | 643 × 916 | Rộng 170 mm | 170,00 × 242,18 mm | 13,49 pt |
+
+Style bổ sung [erd-style.iuml](src/erd-style.iuml) chỉ include style local chung, không sửa hình KT/UC. Nội dung/legend SVG thực tế 18 px, tiêu đề 23 px; công thức quy đổi như phần QA trên. Thuộc tính chứa dấu ngoặc được khai báo `{field}` để PlantUML không nhầm thành method bị ẩn. Dùng lệnh PowerShell render chung ở trên: input tương đối, SVG và PNG 192 dpi; không gửi source ra dịch vụ công khai.
+
+Ngày 23/10/2026 đã render local và mở xem **từng SVG trong Chrome, từng hình qua PNG và đủ 11 trang PDF QA A4**. PDF QA dùng PNG 192 dpi đặt đúng kích thước trên, render lại bằng Poppler; không thấy chữ bị cắt, đường/nhãn đè nhau hoặc tràn vùng chú thích. File QA/script/screenshot nằm ngoài repo, không phải báo cáo cuối. Chữ nhỏ nhất sau quy đổi 10,09–13,49 pt; chưa kiểm tra ghép vào Word, template báo cáo cuối hoặc in giấy. Nếu đổi font/engine/lề/chú thích phải QA lại, không suy từ font nguồn rằng mọi kích thước chèn đều đọc được.
+
+Không chạy test/build ứng dụng, SQL hoặc DB trong lượt ERD; không kiểm chứng schema drift trên DB live. Những quy tắc chỉ ở service đã được gắn nhãn rõ; không suy diễn chúng thành constraint bảo vệ mọi thao tác SQL/import ngoài API.

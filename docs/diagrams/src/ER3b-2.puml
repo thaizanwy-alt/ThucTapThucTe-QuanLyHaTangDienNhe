@@ -1,0 +1,41 @@
+@startuml
+!include erd-style.iuml
+top to bottom direction
+title ER3b-2 - Lịch sử lỗi và phân công khắc phục
+entity "project_inspections\n(tham chiếu)" as I {
+  id : uuid [PK]
+  project_id : uuid
+}
+entity "inspection_items\n(tham chiếu)" as IT {
+  id : uuid [PK]
+  project_id : uuid
+  inspection_id : uuid [FK*]
+  result : enum
+  version : integer
+}
+entity "users\n(tham chiếu)" as U {
+  id : uuid [PK]
+}
+entity "remediation_issues" as IS {
+  id : uuid [PK]
+  project_id : uuid [FK*]
+  item_id : uuid [FK*]
+  assignee_id : uuid [FK]
+  reviewed_by_id : uuid? [FK]
+  description : text
+  status : enum
+  resolution_note, return_reason : text?
+  resolved_at, reviewed_at : timestamptz?
+  version : integer
+}
+I ||--o{ IT
+IT ||--o{ IS : toàn bộ lịch sử
+U ||--o{ IS : assignee_id
+U |o--o{ IS : reviewed_by_id
+legend bottom
+  ? = NULL. DB: partial UQ item_id WHERE status <> CLOSED.
+  Một Item có nhiều lỗi lịch sử, tối đa một lỗi chưa CLOSED.
+  DB: CHECK ghi chú/thời điểm sửa và duyệt; service: workflow/assignee.
+  Service: FAIL + tạo Issue và recheck cập nhật nguyên tử.
+endlegend
+@enduml

@@ -1,0 +1,47 @@
+@startuml
+!include erd-style.iuml
+top to bottom direction
+title ER1 - User, Project, Area và System
+entity "users" as U {
+  id : uuid [PK]
+  {field} email : varchar(320)
+  {field} role : varchar(16)
+  is_active : boolean
+  must_change_password : boolean
+  auth_version : integer
+  version : integer
+}
+entity "projects" as P {
+  id : uuid [PK]
+  code : varchar [UQ]
+  name : varchar
+  address : text?
+  status : enum
+  description : text?
+}
+entity "project_areas" as A {
+  id : uuid [PK]
+  project_id : uuid [FK]
+  parent_id : uuid? [FK]
+  {field} type : enum (FLOOR/ROOM)
+  code, name : varchar
+  sort_order : integer
+}
+entity "project_systems" as S {
+  id : uuid [PK]
+  project_id : uuid [FK]
+  code, name : varchar
+  category : enum
+  description : text?
+}
+P ||--o{ A : project_id
+P ||--o{ S : project_id
+A |o--o{ A : cha / con (parent_id)
+U -[hidden]right-> P
+legend bottom
+  ? = NULL; không ? = NOT NULL. PK/FK là cột DB.
+  DB: UQ email và lower(email); UQ (project_id,code) Area/System.
+  DB: parent_id chỉ FK id; cùng Project/FLOOR-ROOM do service.
+  User không có FK thành viên Project; các vai trò liên kết ở ER3/ER4.
+endlegend
+@enduml

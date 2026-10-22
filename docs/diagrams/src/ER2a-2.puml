@@ -1,0 +1,46 @@
+@startuml
+!include erd-style.iuml
+top to bottom direction
+title ER2a-2 - System, Area phục vụ và hồ sơ mạng
+entity "project_devices\n(tham chiếu)" as D {
+  id : uuid [PK]
+  project_id : uuid
+  type : enum
+}
+entity "project_systems\n(tham chiếu)" as S {
+  id : uuid [PK]
+  project_id : uuid
+}
+entity "project_areas\n(tham chiếu)" as A {
+  id : uuid [PK]
+  project_id : uuid
+}
+entity "project_device_systems" as DS {
+  project_id : uuid [PK,FK*]
+  device_id : uuid [PK,FK*]
+  system_id : uuid [PK,FK*]
+}
+entity "rack_served_areas" as RA {
+  project_id : uuid [PK,FK*]
+  rack_id : uuid [PK,FK*]
+  area_id : uuid [PK,FK*]
+  rack_type : enum = RACK
+}
+entity "device_network_profiles" as N {
+  project_id : uuid [PK,FK*]
+  device_id : uuid [PK,FK*]
+  address_mode : enum?
+  ip_address : inet?
+  {field} mac_address : varchar(17)?
+}
+D ||--o{ DS
+S ||--o{ DS
+D ||--o{ RA : rack
+A ||--o{ RA : phục vụ
+D ||--o| N : một hồ sơ tối đa
+legend bottom
+  ? = NULL. FK* cùng Project; RA còn FK (project_id,rack_id,rack_type).
+  DB: rack_type cố định RACK; CHECK IPv4/mode/MAC; IP không unique.
+  Service: profile chỉ CAMERA/AP; không tự mở rộng FLOOR sang ROOM.
+endlegend
+@enduml

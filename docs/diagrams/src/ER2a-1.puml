@@ -1,0 +1,32 @@
+@startuml
+!include erd-style.iuml
+top to bottom direction
+title ER2a-1 - Device: vị trí, rack và bố trí U
+entity "project_areas\n(tham chiếu)" as A {
+  id : uuid [PK]
+  project_id : uuid
+}
+entity "project_devices" as D {
+  id : uuid [PK]
+  project_id : uuid [FK -> projects]
+  code, name : varchar
+  type : enum
+  area_id : uuid? [FK*]
+  rack_id : uuid? [FK*]
+  capacity_u : integer?
+  {field} rack_role : enum? (MAIN/SUB)
+  parent_rack_id : uuid? [FK*]
+  {field} mount_mode : enum? (U/ZERO_U)
+  start_u, height_u : integer?
+}
+A |o--o{ D : area_id (nơi đặt)
+D |o--o{ D : rack_id (chứa thiết bị)
+D |o--o{ D : parent_rack_id (quản lý)
+legend bottom
+  ? = NULL. FK* ghép với project_id; xóa RESTRICT.
+  DB: CHECK vị trí/mount; EXCLUDE chồng U; trigger sức chứa.
+  U/ZERO_U cần height_u; mount null thì start_u/height_u null.
+  Service: rack_id phải là RACK; effectiveAreaId là suy ra.
+  Không có bảng Rack/Placement; phục vụ Area ở ER2a-2.
+endlegend
+@enduml

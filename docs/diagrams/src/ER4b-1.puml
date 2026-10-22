@@ -1,0 +1,54 @@
+@startuml
+!include erd-style.iuml
+top to bottom direction
+title ER4b-1 - Acceptance và các lựa chọn tường minh
+entity "project_systems\n(tham chiếu)" as S {
+  id : uuid [PK]
+  project_id : uuid
+}
+entity "users\n(tham chiếu)" as U {
+  id : uuid [PK]
+}
+entity "project_acceptances" as A {
+  id : uuid [PK]
+  project_id : uuid [FK -> projects]
+  system_id : uuid [FK*]
+  created_by_id : uuid [FK]
+  confirmed_by_id : uuid? [FK]
+  {field} code : varchar(100)
+  {field} status : enum (DRAFT/CONFIRMED)
+  version : integer
+}
+entity "project_inspections\n(tham chiếu)" as I {
+  id : uuid [PK]
+  project_id : uuid
+}
+entity "evidence_attachments\n(tham chiếu)" as E {
+  id : uuid [PK]
+  project_id : uuid
+}
+entity "acceptance_inspections" as AI {
+  acceptance_id : uuid [PK,FK*]
+  inspection_id : uuid [PK,FK*]
+  project_id : uuid [FK*]
+}
+entity "acceptance_evidence" as AE {
+  acceptance_id : uuid [PK,FK*]
+  evidence_id : uuid [PK,FK*]
+  project_id : uuid [FK*]
+  pinned_storage_key : varchar?
+}
+S ||--o{ A
+U ||--o{ A : created_by_id
+U |o--o{ A : confirmed_by_id
+A ||--o{ AI
+I ||--o{ AI
+A ||--o{ AE
+E ||--o{ AE
+legend bottom
+  ? = NULL; FK* cùng Project; các lựa chọn có thể rỗng trong DB.
+  DB: UQ (project_id,code); confirmed_by/at theo status bằng CHECK.
+  Cùng System/phạm vi, PASS, file/hash và ghim file do service kiểm tra.
+  Snapshot và FK replacement ở ER4b-2; không tự đổi Project.status.
+endlegend
+@enduml

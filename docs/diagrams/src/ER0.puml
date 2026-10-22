@@ -1,0 +1,28 @@
+@startuml
+!include erd-style.iuml
+top to bottom direction
+title ER0 - Quan hệ nghiệp vụ chính (giản lược)
+entity "Project\nprojects" as P
+entity "System\nproject_systems" as S
+entity "Device\nproject_devices" as D
+entity "User\nusers" as U
+entity "Task\nproject_tasks" as T
+entity "Inspection\nproject_inspections" as I
+entity "Evidence\nevidence_attachments" as E
+entity "Acceptance\nproject_acceptances" as A
+P ||--o{ S
+P ||--o{ D
+S ||--o{ T
+S ||--o{ I
+S ||--o{ A
+U ||--o{ T : giao việc
+T |o--o{ E : task_id?
+D }o..o{ S : qua project_device_systems
+I }o..o{ A : qua acceptance_inspections
+E }o..o{ A : qua acceptance_evidence
+legend bottom
+  Nét liền: FK thật; nét chấm: N:N qua bảng nối.
+  Lược Area, port, Item/Issue và snapshot: xem ER chi tiết.
+  Evidence còn hai target khác; không có User-Project membership.
+endlegend
+@enduml
