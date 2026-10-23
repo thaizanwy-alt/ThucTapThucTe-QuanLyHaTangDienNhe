@@ -1,4 +1,4 @@
-# Sơ đồ kiến trúc, Use Case và ERD
+# Sơ đồ kiến trúc, Use Case, ERD và trạng thái
 
 Mốc đối chiếu: `main`, HEAD `3fa0f5c`, ngày 22/10/2026. Đây là mô hình của chức năng **đã triển khai trong source**, không phải đề xuất mở rộng. Không kiểm tra server hoặc dữ liệu DB local trong lượt này.
 
@@ -13,7 +13,7 @@ Mốc đối chiếu: `main`, HEAD `3fa0f5c`, ngày 22/10/2026. Đây là mô h�
 | UC2b | Use Case MANAGER: quản lý thi công, kiểm tra và bàn giao | Task, checklist/Issue, evidence, acceptance/snapshot và export. | [Nguồn](src/UC2b.puml) · [SVG](rendered/UC2b.svg) · [PNG](rendered/UC2b.png) | A4 dọc; rộng 125 mm, cao 243,11 mm. |
 | UC3 | Use Case TECHNICIAN: tra cứu và xử lý công việc được giao | Quyền đọc danh mục/trace, Task/Issue của mình, evidence theo ownership, summary CONFIRMED và tài khoản mình. | [Nguồn](src/UC3.puml) · [SVG](rendered/UC3.svg) · [PNG](rendered/UC3.png) | A4 dọc; cao 249 mm, rộng 115,95 mm. |
 
-Nên đưa KT1, KT2, UC1 vào thân báo cáo; UC2a, UC2b, UC3 vào phần phân tích chi tiết hoặc phụ lục. Nhóm ERD bổ sung có mốc đối chiếu riêng ở cuối tài liệu; chưa tạo state, activity, sequence hoặc DFD.
+Nên đưa KT1, KT2, UC1 vào thân báo cáo; UC2a, UC2b, UC3 vào phần phân tích chi tiết hoặc phụ lục. Nhóm ERD và ST1 bổ sung có mốc đối chiếu riêng ở cuối tài liệu; chưa tạo sơ đồ trạng thái khác, activity, sequence hoặc DFD.
 
 ## Kích thước chèn và QA A4
 
@@ -218,3 +218,45 @@ Style bổ sung [erd-style.iuml](src/erd-style.iuml) chỉ include style local c
 Ngày 23/10/2026 đã render local và mở xem **từng SVG trong Chrome, từng hình qua PNG và đủ 11 trang PDF QA A4**. PDF QA dùng PNG 192 dpi đặt đúng kích thước trên, render lại bằng Poppler; không thấy chữ bị cắt, đường/nhãn đè nhau hoặc tràn vùng chú thích. File QA/script/screenshot nằm ngoài repo, không phải báo cáo cuối. Chữ nhỏ nhất sau quy đổi 10,09–13,49 pt; chưa kiểm tra ghép vào Word, template báo cáo cuối hoặc in giấy. Nếu đổi font/engine/lề/chú thích phải QA lại, không suy từ font nguồn rằng mọi kích thước chèn đều đọc được.
 
 Không chạy test/build ứng dụng, SQL hoặc DB trong lượt ERD; không kiểm chứng schema drift trên DB live. Những quy tắc chỉ ở service đã được gắn nhãn rõ; không suy diễn chúng thành constraint bảo vệ mọi thao tác SQL/import ngoài API.
+
+## ST1 — trạng thái Task
+
+Mốc đối chiếu: `main`, HEAD `2a675fe`, ngày **23/10/2026**. Chỉ tạo ST1, không bổ sung sơ đồ trạng thái Issue, acceptance hoặc tài khoản trong lượt này. Phù hợp chương phân tích/thiết kế quy trình thi công; chú thích đề xuất: **Vòng đời công việc và quyền chuyển trạng thái**.
+
+| Mã | Nội dung | Nguồn / SVG / PNG | Kích thước chèn đã QA |
+| --- | --- | --- | --- |
+| ST1 | Luồng bắt đầu, gửi duyệt, trả việc và duyệt; sửa/giao lại không đổi trạng thái. | [Nguồn](src/ST1.puml) · [SVG](rendered/ST1.svg) · [PNG](rendered/ST1.png) | A4 dọc, rộng **170 mm**, cao **204,12 mm**, khóa tỉ lệ. |
+
+### Đối chiếu source, API và điều kiện
+
+Các đường dẫn dưới đây tính từ gốc repo. Đã đọc test để xác định assertion đang có, **không chạy lại test** trong lượt tài liệu này.
+
+- `backend/src/tasks/task-status.enum.ts`: đúng năm trạng thái ASSIGNED, IN_PROGRESS, SUBMITTED, RETURNED, APPROVED.
+- `backend/src/tasks/tasks.controller.ts`: JWT/role guard; MANAGER tạo/sửa/approve/return, TECHNICIAN start/submit. Route nằm dưới `/projects/:projectId/tasks`.
+- `backend/src/tasks/tasks.service.ts`: `createTask`, `updateTask`, `startTask`, `submitTask`, `approveTask`, `returnTask`, `transition`; kiểm tra trạng thái, assignee hiện hành, liên kết cùng Project và cập nhật có điều kiện.
+- `backend/src/tasks/dto/task.dto.ts`: dữ liệu tạo/sửa, completionNote và reason; `backend/src/projects/dto/dto.transforms.ts`: chuẩn hóa mã và trim text. `backend/src/tasks/project-task.entity.ts` và `backend/src/database/migrations/1792000000000-CreateProjectTasks.ts`: trạng thái mặc định và CHECK ghi chú; FK/nullable xem ER3a.
+- `backend/test/tasks.test.cjs`: assertion tạo ở ASSIGNED, normalization/null, quyền/ownership, giao lại, return/resubmit/terminal và cập nhật stale. `backend/test/tasks.db.test.cjs`: FK/CHECK và luồng service trên PostgreSQL tạm. `backend/test/tasks.http.test.cjs`: Nest boot, JWT/role/UUID; không coi file HTTP này tự nó đã kiểm tra mọi cạnh workflow.
+- `backend/src/auth/jwt-auth.guard.ts`, `auth.service.ts`, `roles.guard.ts`: JWT hiện hành, User active/authVersion, buộc đổi mật khẩu và role. Đây là điều kiện API chung, không phải trạng thái Task mới.
+
+| Từ → đến | API/thao tác và actor | Điều kiện / dữ liệu có ý nghĩa |
+| --- | --- | --- |
+| Khởi tạo → ASSIGNED | `POST /projects/:projectId/tasks`, MANAGER | Bắt buộc code/title/systemId/assigneeId hợp lệ; Project/System tồn tại, cùng Project; Area tùy chọn cũng cùng Project. Người nhận phải là TECHNICIAN active. Code chuẩn hóa, title không trống. Không nhận trạng thái khởi tạo tùy ý từ client. |
+| ASSIGNED → IN_PROGRESS | `POST .../:taskId/start`, TECHNICIAN | Chỉ người được giao hiện hành. Không yêu cầu body bổ sung. |
+| RETURNED → IN_PROGRESS | `POST .../:taskId/start`, TECHNICIAN | Cùng thao tác start, vẫn kiểm tra assignee hiện hành; không phải một trạng thái “làm lại” mới. |
+| IN_PROGRESS → SUBMITTED | `POST .../:taskId/submit`, TECHNICIAN | Đúng assignee; completionNote là chuỗi không trống sau trim. Lưu submittedAt; xóa returnReason, reviewedById và reviewedAt cũ khi gửi lại. |
+| SUBMITTED → APPROVED | `POST .../:taskId/approve`, MANAGER | Chỉ từ SUBMITTED; ghi người/thời điểm duyệt, không yêu cầu ghi chú duyệt mới. |
+| SUBMITTED → RETURNED | `POST .../:taskId/return`, MANAGER | reason là chuỗi không trống sau trim; lưu lý do, người và thời điểm trả việc. |
+
+Ghi chú sửa/giao lại trên hình áp dụng cho **cả ASSIGNED và RETURNED**, dù neo cạnh ASSIGNED để tránh dây chéo. `PATCH .../:taskId` chỉ MANAGER, yêu cầu ít nhất một field cho phép: code, title, systemId, areaId, assigneeId hoặc description. Nếu đổi người nhận thì kiểm tra TECHNICIAN active dưới khóa; System/Area mới vẫn cùng Project. PATCH không đổi status, không tự xóa lịch sử review; không vẽ self-transition có ngữ nghĩa thoát/vào lại trạng thái. IN_PROGRESS, SUBMITTED và APPROVED không được sửa/giao lại bằng API này.
+
+APPROVED không có cạnh chuyển tiếp ra trong API Task hiện tại; bản ghi vẫn tồn tại và người đang được giao vẫn có thể xem ở mọi trạng thái. Không thêm trạng thái CANCELLED/DELETED hoặc tự chuyển APPROVED trở lại. **Duyệt Task không cập nhật Project.status và không có nghĩa toàn Project đã hoàn thành.**
+
+Thao tác ngoài trạng thái cho phép hoặc cập nhật có điều kiện thua tranh chấp trả 409; Task không dùng expectedVersion. Điều kiện UPDATE vẫn gồm status nguồn và, với TECHNICIAN, assigneeId. Không biểu diễn mọi cạnh từ chối lên hình: DTO/ghi chú thiếu trả 400; JWT không hợp lệ 401; sai vai trò 403; TECHNICIAN truy cập Task người khác hoặc resource khác Project 404. Guard còn có 403 PASSWORD_CHANGE_REQUIRED nếu chưa đổi mật khẩu tạm. Đây là mô tả source, không phải kết quả HTTP smoke mới.
+
+### Render và QA ST1
+
+Tái sử dụng `style.iuml`, local PlantUML/Java/Graphviz theo lệnh PowerShell chung phía trên; nguồn ST1 chỉ override style state và noteFontSize=18, không thay style hoặc bản render của các hình khác. Đã render SVG và PNG 192 dpi, mở SVG bằng Chrome local, xem PNG cuối và **một trang PDF QA A4 ngoài repo** qua bản render Poppler.
+
+SVG viewBox **837 × 1005**, chữ nội dung/cạnh/ghi chú/legend thực tế **18 px**, tiêu đề 23 px. Chèn rộng 170 mm, cao 204,12 mm cho chữ nhỏ nhất **10,36 pt** theo công thức quy đổi đã nêu. Trang QA A4 dọc có hình cách đỉnh 18 mm, căn giữa ngang (lề mỗi bên 20 mm); dải trống chú thích cao 8 mm cách đáy 18 mm. Không thấy cắt/đè chữ, đường đi hoặc tràn trang ở kích thước này. Không thu nhỏ thêm; nếu mẫu báo cáo đổi lề/kích thước chèn cần QA lại.
+
+PDF QA, script và screenshot kiểm tra đều ngoài repo, không phải báo cáo cuối. Chưa ghép Word hoặc in giấy; không kiểm chứng runtime/DB mới, không chạy test/build/seed. Lượt này chỉ thêm ba file ST1 và cập nhật README sơ đồ; không sửa ứng dụng, DB hoặc dependency.

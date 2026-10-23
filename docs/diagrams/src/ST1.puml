@@ -1,0 +1,35 @@
+@startuml
+!include style.iuml
+top to bottom direction
+skinparam stateBackgroundColor #EFF5F8
+skinparam stateBorderColor #476579
+skinparam stateFontSize 18
+skinparam noteFontSize 18
+title ST1 - Vòng đời Task
+
+state ASSIGNED
+state IN_PROGRESS
+state SUBMITTED
+state RETURNED
+state APPROVED
+
+[*] --> ASSIGNED : Tạo | MANAGER\n[liên kết và người nhận hợp lệ]
+ASSIGNED --> IN_PROGRESS : Bắt đầu | TECHNICIAN\n[đúng assignee hiện tại]
+IN_PROGRESS --> SUBMITTED : Gửi duyệt | TECHNICIAN\n[đúng assignee;\ncompletionNote không trống]
+SUBMITTED --> APPROVED : Duyệt | MANAGER\n[Task đang SUBMITTED]
+SUBMITTED -right-> RETURNED : Trả việc | MANAGER\n[reason không trống]
+RETURNED -up-> IN_PROGRESS : Bắt đầu lại | TECHNICIAN\n[đúng assignee hiện tại]
+
+note left of ASSIGNED
+  Sửa / giao lại | MANAGER
+  Chỉ ASSIGNED hoặc RETURNED.
+  Không đổi trạng thái;
+  Giao lại: TECHNICIAN active.
+end note
+
+legend bottom
+  Mỗi cạnh: thao tác | vai trò [điều kiện]; mọi API cần JWT hợp lệ.
+  APPROVED kết thúc Task; không tự hoàn thành Project.
+  Sai trạng thái / tranh cập nhật: 409; quyền và dữ liệu: xem README.
+endlegend
+@enduml
