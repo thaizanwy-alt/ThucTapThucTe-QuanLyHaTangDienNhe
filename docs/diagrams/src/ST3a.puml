@@ -1,0 +1,29 @@
+@startuml
+!include style.iuml
+top to bottom direction
+skinparam stateBackgroundColor #EFF5F8
+skinparam stateBorderColor #476579
+skinparam stateFontSize 18
+skinparam noteFontSize 18
+title ST3a - Vòng đời một hồ sơ nghiệm thu
+
+state DRAFT
+state CONFIRMED
+
+[*] --> DRAFT : Tạo thường / tạo bản thay thế | MANAGER\n[đúng DTO; lựa chọn hợp lệ]
+DRAFT --> CONFIRMED : Xác nhận | MANAGER\n[version + fingerprint đúng;\nphiếu đủ điều kiện; file được chọn hợp lệ]\n/ Lưu snapshot + ghim evidence + đổi status\ntrong cùng transaction
+
+note right of DRAFT
+  Sửa nháp | MANAGER
+  expectedVersion đúng.
+  System không đổi;
+  hai danh sách có thể rỗng.
+end note
+
+legend bottom
+  Chỉ DRAFT và CONFIRMED là trạng thái DB; không có cạnh quay lại.
+  Readiness chỉ tư vấn; confirm kiểm tra lại dưới khóa.
+  CONFIRMED bất biến; sửa sai bằng hồ sơ mới liên kết ở ST3b.
+  Không tự đổi Project.status; không có nghĩa khách hàng đã ký.
+endlegend
+@enduml

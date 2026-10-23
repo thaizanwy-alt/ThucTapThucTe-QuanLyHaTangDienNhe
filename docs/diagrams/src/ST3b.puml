@@ -1,0 +1,52 @@
+@startuml
+!include style.iuml
+top to bottom direction
+skinparam objectBackgroundColor #EFF5F8
+skinparam objectBorderColor #476579
+skinparam objectFontSize 18
+skinparam objectAttributeFontSize 18
+skinparam noteFontSize 18
+title ST3b - Quan hệ thay thế giữa các hồ sơ
+
+frame "Thời điểm 1: B còn là nháp" {
+  object "A : ProjectAcceptance" as A1 {
+    status = CONFIRMED
+    replacedById = null
+  }
+  object "B : ProjectAcceptance" as B1 {
+    status = DRAFT
+    replacesId = A
+    replacementReason = lý do sửa sai
+  }
+  B1 ..> A1 : replacesId
+}
+
+frame "Thời điểm 2: đã confirm B rồi C" {
+  object "A : ProjectAcceptance" as A2 {
+    status = CONFIRMED
+    replacedById = B
+  }
+  object "B : ProjectAcceptance" as B2 {
+    status = CONFIRMED
+    replacesId = A
+    replacedById = C
+  }
+  object "C : ProjectAcceptance" as C2 {
+    status = CONFIRMED
+    replacesId = B
+    replacedById = null
+  }
+  B2 ..> A2 : replacesId
+  C2 ..> B2 : replacesId
+}
+
+B1 -[hidden]right-> C2
+legend bottom
+  Hai thời điểm minh họa; A/B/C là các ID khác nhau, không phải state.
+  Mũi tên là liên kết hồ sơ, KHÔNG phải chuyển trạng thái.
+  MANAGER tạo bản mới từ CONFIRMED chưa có bản thay thế CONFIRMED.
+  Lý do bắt buộc; cùng Project/System; lựa chọn mới tường minh.
+  Nháp chưa thay thế bản cũ; một bản thay thế CONFIRMED trực tiếp.
+  replacedById do response suy ra, không phải cột DB hay enum mới.
+endlegend
+@enduml

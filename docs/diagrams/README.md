@@ -13,7 +13,7 @@ Mốc đối chiếu: `main`, HEAD `3fa0f5c`, ngày 22/10/2026. Đây là mô h�
 | UC2b | Use Case MANAGER: quản lý thi công, kiểm tra và bàn giao | Task, checklist/Issue, evidence, acceptance/snapshot và export. | [Nguồn](src/UC2b.puml) · [SVG](rendered/UC2b.svg) · [PNG](rendered/UC2b.png) | A4 dọc; rộng 125 mm, cao 243,11 mm. |
 | UC3 | Use Case TECHNICIAN: tra cứu và xử lý công việc được giao | Quyền đọc danh mục/trace, Task/Issue của mình, evidence theo ownership, summary CONFIRMED và tài khoản mình. | [Nguồn](src/UC3.puml) · [SVG](rendered/UC3.svg) · [PNG](rendered/UC3.png) | A4 dọc; cao 249 mm, rộng 115,95 mm. |
 
-Nên đưa KT1, KT2, UC1 vào thân báo cáo; UC2a, UC2b, UC3 vào phần phân tích chi tiết hoặc phụ lục. Nhóm ERD, ST1 và ST2 bổ sung có mốc đối chiếu riêng ở cuối tài liệu; chưa tạo sơ đồ trạng thái khác, activity, sequence hoặc DFD.
+Nên đưa KT1, KT2, UC1 vào thân báo cáo; UC2a, UC2b, UC3 vào phần phân tích chi tiết hoặc phụ lục. Nhóm ERD, ST1, ST2 và ST3 bổ sung có mốc đối chiếu riêng ở cuối tài liệu; chưa tạo sơ đồ trạng thái tài khoản, activity, sequence hoặc DFD.
 
 ## Kích thước chèn và QA A4
 
@@ -302,3 +302,63 @@ Khi đã có Issue chưa CLOSED, `PUT result` không được đổi Item trực
 Giữ style ST1: include local `style.iuml`, màu state giống nhau, note/legend/nội dung 18 px, tiêu đề 23 px. Render bằng PlantUML/Java/Graphviz local đã có, SVG và PNG 192 dpi; không cài dependency hoặc gửi source ra dịch vụ công khai. SVG viewBox **680 × 1079**; rộng 150 mm cho cao 238,01 mm, chữ nhỏ nhất **11,26 pt** theo công thức quy đổi phần trên, không cần tách hình.
 
 Đã mở SVG trong Chrome local, xem PNG và trang PDF QA A4 render bằng Poppler ngoài repo. Hình cách đỉnh trang 18 mm, lề ngang mỗi bên 30 mm, chừa dải chú thích cao 8 mm cách đáy 18 mm. Không thấy chữ/nhãn/đường nối chồng hoặc cắt/tràn ở kích thước này. PDF QA và script/screenshot không thuộc repo hoặc phạm vi stage. Chưa kiểm tra Word/in giấy; nếu đổi kích thước chèn/font/lề cần QA lại. Không chạy test/build/seed/DB hoặc xác minh runtime mới; chỉ thêm ST2 và cập nhật README, không thay ST1/ứng dụng/schema/dependency.
+
+## ST3 — nghiệm thu và quan hệ thay thế
+
+Mốc đối chiếu: `main`, HEAD `ad22f6c`, ngày **23/10/2026**. Tách thành **ST3a và ST3b** để không dùng cạnh chuyển trạng thái biểu diễn việc sinh hồ sơ mới. Dùng trong chương thiết kế quy trình kiểm tra/nghiệm thu; không thay thế ER4b về cấu trúc dữ liệu.
+
+| Mã | Chú thích đề xuất / nội dung | Nguồn / SVG / PNG | Kích thước A4 đã QA |
+| --- | --- | --- | --- |
+| ST3a | Vòng đời một hồ sơ nghiệm thu; chỉ hai trạng thái DB DRAFT và CONFIRMED. | [Nguồn](src/ST3a.puml) · [SVG](rendered/ST3a.svg) · [PNG](rendered/ST3a.png) | Dọc, rộng **170 mm**, cao **192,79 mm**; chữ nhỏ nhất **14,01 pt**. |
+| ST3b | Quan hệ thay thế giữa các hồ sơ riêng biệt tại hai thời điểm. | [Nguồn](src/ST3b.puml) · [SVG](rendered/ST3b.svg) · [PNG](rendered/ST3b.png) | Dọc, rộng **170 mm**, cao **240,49 mm**; chữ nhỏ nhất **12,44 pt**. |
+
+### Nguồn đối chiếu ST3
+
+- `backend/src/acceptances/acceptance.entities.ts`: enum AcceptanceStatus, ProjectAcceptance, AcceptanceSnapshot và các lựa chọn phiếu/evidence. Chỉ DRAFT/CONFIRMED; replacesId/replacementReason nullable. Không có enum SUPERSEDED/REPLACED hoặc cột replacedById.
+- `backend/src/acceptances/acceptances.controller.ts`: MANAGER tạo/sửa/readiness/confirm/replacement và file; TECHNICIAN chỉ GET theo whitelist của service, không mutation.
+- `backend/src/acceptances/acceptance.dto.ts`: CreateAcceptanceDto, UpdateAcceptanceDto, ConfirmAcceptanceDto, ReplacementAcceptanceDto; VersionDto dùng chung từ `backend/src/inspections/dto/inspection.dto.ts`.
+- `backend/src/acceptances/acceptances.service.ts`: `editable`, `latest`, `validateSelection`, `replaceSelection`, `sources`, `readiness`, `verifyFile`, `confirm`, `replacement`, `response`, `file` và `write`. Đây là nguồn điều kiện service và transaction, không chỉ enum/decorator.
+- `backend/src/database/migrations/1802000000000-CreateProjectAcceptances.ts`: FK replacement cùng Project/System, CHECK status/actor/thời điểm, reason và partial UNIQUE một replacement CONFIRMED trực tiếp. Bất biến snapshot và điều kiện nghiệm thu còn do service kiểm tra, không suy từ FK rằng SQL tùy ý cũng theo workflow.
+- `backend/test/acceptances.test.cjs`: DTO/null/hai mảng bắt buộc nhưng cho phép [], fingerprint canonical. `backend/test/acceptances.db.test.cjs`: blockers, source fingerprint, thiếu/sai hash file rollback, snapshot bất biến/file ghim sau xóa mềm, confirm/concurrency với checklist/evidence, hai replacement tranh confirm, chuỗi tiếp và HTTP replacement với lựa chọn mới khi Task đổi System. Chỉ đọc test; không chạy test hoặc tuyên bố kết quả runtime mới.
+
+### Vòng đời một hồ sơ — ST3a
+
+Các endpoint dưới `/projects/:projectId/acceptances`; tất cả mutation chỉ MANAGER và vẫn cần JWT/quyền hiện hành.
+
+| Thao tác | Request / điều kiện | Tác động |
+| --- | --- | --- |
+| Tạo thường | `POST` với code, title, systemId, inspectionIds, evidenceIds; note tùy chọn. Hai mảng bắt buộc, không trùng, có thể []. | Hồ sơ **ID mới**, DRAFT, version=1, replacesId/replacementReason null. Chưa có snapshot hoặc file ghim. |
+| Sửa nháp | `PATCH /:id`, expectedVersion đúng, ít nhất một field cho phép code/title/note/inspectionIds/evidenceIds. | Chỉ DRAFT; tăng version, không đổi status hoặc System. Mảng được gửi thay toàn bộ lựa chọn tương ứng; [] hợp lệ, mảng bỏ qua giữ lựa chọn hiện tại. Không dùng self-transition mang nghĩa thoát/vào lại state. |
+| Readiness | `GET /:id/readiness`, chỉ DRAFT. | Trả eligible/blockers/sourceFingerprint/version; chỉ tư vấn, không xác nhận. Nguồn có thể thay đổi sau response; kiểm tra file vật lý nằm ở confirm, nên eligible không bảo đảm file thực tế còn hợp lệ. |
+| Confirm | `POST /:id/confirm` với expectedVersion và expectedSourceFingerprint hợp lệ, khớp nguồn đọc lại dưới khóa. | Trong cùng transaction: lưu snapshot schemaVersion=1, ghim các evidence đã chọn, đổi status CONFIRMED, tăng version và ghi confirmedById/confirmedAt. Không có cạnh quay về DRAFT. |
+
+“Phiếu đủ điều kiện; file hợp lệ” trên cạnh confirm là cách rút gọn các kiểm tra sau, **không bỏ điều kiện service**:
+
+1. Project/System và lựa chọn tồn tại đúng phạm vi. Phiếu cùng Project/System; evidence Task phải cùng System; evidence Item/Issue phải thuộc phiếu đã chọn. Evidence phải active tại confirm; không tự lấy thêm evidence ngoài lựa chọn.
+2. Có ít nhất một phiếu; mỗi phiếu có ít nhất một Item; **mọi Item PASS và mọi Issue của các Item đều CLOSED**. RESOLVED chưa đủ. Device đổi liên kết System sau khi tạo phiếu không tự làm phiếu lịch sử mất giá trị.
+3. Version hồ sơ đúng, fingerprint mới khớp toàn bộ dữ liệu thực sự đưa vào snapshot (Project/System, phạm vi Area/Device, phiếu/Item/Issue, Task evidence, actors và metadata evidence). Nguồn được chuẩn hóa thứ tự; readiness không thay confirm kiểm tra lại.
+4. Mỗi evidence đã chọn được đọc từ storage và kiểm tra **size cùng SHA-256** so với metadata. File thiếu/không đọc được hoặc sai integrity không được bỏ qua để confirm gói thiếu; transaction không để snapshot/pin/status dở dang. Evidence **không bắt buộc**: danh sách [] vẫn có thể confirm nếu các điều kiện khác đủ.
+5. Với DRAFT thay thế, bản gốc vẫn phải là CONFIRMED và chưa có replacement CONFIRMED trực tiếp khi kiểm tra lại dưới khóa; xem ST3b.
+
+“Ghim” theo code là ghi `pinnedStorageKey` nội bộ trong liên kết AcceptanceEvidence tới file hiện hữu, **không phải copy file mới sang một thư mục archive**. Snapshot giữ metadata/nội dung nghiệp vụ; không có FK tới từng field lịch sử bên trong JSON. Sau confirm, API đọc snapshot, không lấy nội dung sống thay thế; xóa mềm evidence nguồn không làm mất file ghim cho MANAGER qua API hồ sơ. Cơ chế này không phải backup chống mất/hỏng file disk.
+
+CONFIRMED không sửa nội dung hoặc quay lại nháp bằng API; sửa sai bằng ID mới. “Bất biến” nói về nội dung/snapshot/liên kết của hồ sơ, không có nghĩa field **suy ra** replacedById luôn giữ nguyên. Không tự cập nhật Project.status, không chứng minh toàn System/Project được bao phủ và không biểu thị khách hàng đã ký.
+
+### Quan hệ giữa các hồ sơ — ST3b
+
+ST3b là minh họa đối tượng/quan hệ, **không phải state machine thứ hai**. A/B/C là ba ID khác nhau; hai khung là hai thời điểm của cùng ví dụ, không phải các state. Mũi tên nét chấm đi **từ bản mới về bản gốc** theo replacesId. Không có cạnh từ CONFIRMED của A sang DRAFT của B.
+
+MANAGER gọi `POST /:id/replacement` trên bản gốc với `{code,title,reason,inspectionIds,evidenceIds}`. reason không trống sau trim, tối đa 2000 ký tự, được lưu thành replacementReason. Hai mảng bắt buộc, không trùng, cho phép []; lựa chọn được kiểm tra giống tạo nháp và lỗi rollback cả nháp mới. Không tự sao chép evidence hoặc danh sách phiếu từ bản gốc. Code hiện tại **sao chép note của bản gốc**, giữ cùng Project/System; các field này không phải bằng chứng rằng snapshot/evidence cũ bị ghi đè. API tạo replacement không nhận expectedVersion; kiểm tra bản gốc bằng khóa và `latest`. Sửa/confirm nháp mới vẫn dùng version của chính nháp đó.
+
+- **Thời điểm 1:** A CONFIRMED, B DRAFT với B.replacesId=A. A.replacedById vẫn null: tạo nháp không làm A mất hiệu lực. Có thể nhiều DRAFT cùng trỏ A; ST3b chỉ vẽ một để tránh rối.
+- **Khi confirm B:** kiểm tra lại các điều kiện ST3a và bản gốc A. B CONFIRMED thành công thì response của A mới suy ra replacedById=B. Không UPDATE A thành SUPERSEDED/REPLACED; status A vẫn CONFIRMED, snapshot và file ghim A giữ nguyên.
+- **Thời điểm 2:** sau khi tạo C từ B và confirm C, C.replacesId=B, B.replacesId=A. Response A.replacedById=B, B.replacedById=C, C.replacedById=null. “Đã thay thế” của A/B là nhãn suy ra từ quan hệ, **không phải enum/cột status mới**. replacedById chỉ là field response được tìm từ replacement CONFIRMED trực tiếp.
+- Chỉ chọn bản gốc CONFIRMED **chưa có replacement CONFIRMED trực tiếp**, tức đầu mới nhất của **chuỗi đó**, không phải bản có createdAt mới nhất toàn Project. Không chọn DRAFT hoặc A sau khi B đã confirm. Nhiều candidate DRAFT được tạo trước đó không thể cùng confirm; khóa predecessor/candidate và partial UNIQUE chặn hai replacement CONFIRMED cùng bản gốc. Candidate thua vẫn DRAFT; không có API tự chuyển nó sang một state “hủy”. Muốn thay tiếp phải tạo từ B (hoặc C khi C đã confirm), không vòng về A.
+
+### Phần lược bỏ, quyền và QA ST3
+
+Hình lược endpoint chi tiết, bảng lựa chọn, số version cụ thể, dữ liệu snapshot và các nhánh lỗi để đọc rõ trên A4; xem ER4b cho schema và các đoạn trên cho điều kiện. Không mô hình hóa lỗi HTTP thành state: validation 400, JWT 401, sai quyền 403, resource/phạm vi không tồn tại 404, version/fingerprint/trạng thái hoặc race 409; lỗi đọc storage có thể 503. TECHNICIAN chỉ nhận summary CONFIRMED whitelist; không form ghi, snapshot chi tiết hoặc file hồ sơ.
+
+Giữ style local ST1/ST2; không sửa `style.iuml` hoặc render hình trước. Nội dung/cạnh/legend/field của SVG là 18 px, tiêu đề 23 px; ST3b tiêu đề khung cũng 18 px. ViewBox ST3a **619 × 702**, ST3b **697 × 986**. Kích thước trong bảng dùng công thức quy đổi đã nêu, mỗi hình trên **một trang A4 dọc**, rộng 170 mm, lề ngang 20 mm, đỉnh hình 18 mm; dải chú thích trống cao 8 mm cách đáy 18 mm.
+
+Đã render SVG/PNG 192 dpi hoàn toàn local, mở từng SVG bằng Chrome, xem từng PNG cuối và đủ hai trang PDF QA ngoài repo qua Poppler. Không thấy cắt/đè chữ hoặc đường nối, không tràn vùng chú thích; chữ nhỏ nhất 14,01 pt (ST3a) và 12,44 pt (ST3b). QA/script/screenshot không thuộc repo và không phải báo cáo cuối. Chưa ghép Word/in giấy; đổi lề/font/kích thước phải QA lại. Lượt này chỉ tạo sáu file ST3a/ST3b và cập nhật README; không sửa ứng dụng/DB/dependency, không chạy test/build/seed hoặc kiểm chứng runtime mới.
