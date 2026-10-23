@@ -13,7 +13,7 @@ Mốc đối chiếu: `main`, HEAD `3fa0f5c`, ngày 22/10/2026. Đây là mô h�
 | UC2b | Use Case MANAGER: quản lý thi công, kiểm tra và bàn giao | Task, checklist/Issue, evidence, acceptance/snapshot và export. | [Nguồn](src/UC2b.puml) · [SVG](rendered/UC2b.svg) · [PNG](rendered/UC2b.png) | A4 dọc; rộng 125 mm, cao 243,11 mm. |
 | UC3 | Use Case TECHNICIAN: tra cứu và xử lý công việc được giao | Quyền đọc danh mục/trace, Task/Issue của mình, evidence theo ownership, summary CONFIRMED và tài khoản mình. | [Nguồn](src/UC3.puml) · [SVG](rendered/UC3.svg) · [PNG](rendered/UC3.png) | A4 dọc; cao 249 mm, rộng 115,95 mm. |
 
-Nên đưa KT1, KT2, UC1 vào thân báo cáo; UC2a, UC2b, UC3 vào phần phân tích chi tiết hoặc phụ lục. Nhóm ERD và ST1 bổ sung có mốc đối chiếu riêng ở cuối tài liệu; chưa tạo sơ đồ trạng thái khác, activity, sequence hoặc DFD.
+Nên đưa KT1, KT2, UC1 vào thân báo cáo; UC2a, UC2b, UC3 vào phần phân tích chi tiết hoặc phụ lục. Nhóm ERD, ST1 và ST2 bổ sung có mốc đối chiếu riêng ở cuối tài liệu; chưa tạo sơ đồ trạng thái khác, activity, sequence hoặc DFD.
 
 ## Kích thước chèn và QA A4
 
@@ -260,3 +260,45 @@ Tái sử dụng `style.iuml`, local PlantUML/Java/Graphviz theo lệnh PowerShe
 SVG viewBox **837 × 1005**, chữ nội dung/cạnh/ghi chú/legend thực tế **18 px**, tiêu đề 23 px. Chèn rộng 170 mm, cao 204,12 mm cho chữ nhỏ nhất **10,36 pt** theo công thức quy đổi đã nêu. Trang QA A4 dọc có hình cách đỉnh 18 mm, căn giữa ngang (lề mỗi bên 20 mm); dải trống chú thích cao 8 mm cách đáy 18 mm. Không thấy cắt/đè chữ, đường đi hoặc tràn trang ở kích thước này. Không thu nhỏ thêm; nếu mẫu báo cáo đổi lề/kích thước chèn cần QA lại.
 
 PDF QA, script và screenshot kiểm tra đều ngoài repo, không phải báo cáo cuối. Chưa ghép Word hoặc in giấy; không kiểm chứng runtime/DB mới, không chạy test/build/seed. Lượt này chỉ thêm ba file ST1 và cập nhật README sơ đồ; không sửa ứng dụng, DB hoặc dependency.
+
+## ST2 — vòng đời Issue và kiểm tra lại
+
+Mốc đối chiếu: `main`, HEAD `34626e8`, ngày **23/10/2026**. Chỉ mô hình hóa `IssueStatus`: OPEN, IN_PROGRESS, RESOLVED, CLOSED; **không trộn** các giá trị `InspectionResult` NOT_CHECKED/PASS/FAIL thành trạng thái của Issue. Trên cạnh, phần sau `/` là tác động tới dữ liệu, không phải state mới. Chú thích đề xuất cho chương quy trình kiểm tra/khắc phục: **Vòng đời lỗi, quyền xử lý và kiểm tra lại nguyên tử**.
+
+| Mã | Nguồn / SVG / PNG | Kích thước chèn đã QA |
+| --- | --- | --- |
+| ST2 | [Nguồn](src/ST2.puml) · [SVG](rendered/ST2.svg) · [PNG](rendered/ST2.png) | A4 dọc; rộng **150 mm**, cao **238,01 mm**, khóa tỉ lệ. |
+
+### Nguồn đối chiếu ST2
+
+- `backend/src/inspections/inspection.enums.ts`: hai enum riêng IssueStatus và InspectionResult.
+- `backend/src/inspections/inspections.controller.ts`: MANAGER ghi kết quả Item/giao lại/recheck; TECHNICIAN start/resolve; hai vai trò đọc Issue theo service. Phiếu/Item chỉ MANAGER.
+- `backend/src/inspections/dto/inspection.dto.ts`: `PutInspectionResultDto`, `CreateIssueDto`, `VersionDto`, `AssignIssueDto`, `ResolveIssueDto`, `RecheckIssueDto`.
+- `backend/src/inspections/inspections.service.ts`: `putResult`, `visibleIssue`, `mutateIssue`, `lockIssueAssignees`, `startIssue`, `resolveIssue`, `assignIssue`, `recheckIssue`, `write` và kiểm tra `version`.
+- `backend/src/inspections/inspection.entities.ts`; `backend/src/database/migrations/1800000000000-CreateInspections.ts`: quan hệ Item/Issue, CHECK ghi chú/thời điểm và partial UNIQUE `item_id WHERE status <> 'CLOSED'`. ER3b-2 mô tả quan hệ lịch sử, ST2 mô tả hành vi API; không suy rằng CHECK DB tự cưỡng chế mọi cạnh workflow.
+- `backend/test/inspections.test.cjs`: validation DTO/version/null/ghi chú. `backend/test/inspections.db.test.cjs`: FAIL rollback/concurrency, ownership/giao lại/start, resolve giữ FAIL, recheck hai version/reason, rollback khi đóng, CLOSED bất biến và FAIL mới; có hai thứ tự race có kiểm soát assign/start và PUT-result/recheck cùng các assertion HTTP. Chỉ đọc source test trong lượt này, không chạy hoặc tuyên bố kết quả mới.
+
+### API, version và tác động tới Item
+
+Trong bảng, `I` là version Item hiện hành, `V` là version Issue hiện hành. Version là số nguyên dương; sai/thiếu định dạng trả 400, stale hoặc đạt trần tăng version trả 409 theo service. Recheck không được chỉ gửi một trong hai version.
+
+| Chuyển/thao tác | Actor, request | Điều kiện và dữ liệu cập nhật |
+| --- | --- | --- |
+| Khởi tạo → OPEN | MANAGER, `PUT /projects/:projectId/inspections/:inspectionId/items/:itemId/result` | `{expectedVersion:I, result:'FAIL', issue:{description,assigneeId}, note?}`. Chưa có Issue khác CLOSED; description không trống sau trim, assignee là TECHNICIAN active. Cùng transaction tạo Issue version=1 và cập nhật Item FAIL, note, người/thời điểm kiểm tra, tăng Item.version. Lỗi ở bất kỳ bước nào rollback cả hai. |
+| OPEN → IN_PROGRESS | TECHNICIAN, `POST /projects/:projectId/issues/:issueId/start` | `{expectedVersion:V}`; đúng assignee hiện hành. Tăng Issue.version, không đổi kết quả hoặc version Item. |
+| IN_PROGRESS → RESOLVED | TECHNICIAN, `POST .../:issueId/resolve` | `{expectedVersion:V,resolutionNote}`; đúng assignee, resolutionNote không trống sau trim. Lưu ghi chú/thời điểm sửa và tăng Issue.version; Item vẫn FAIL, version Item không đổi. RESOLVED vẫn được đếm là lỗi chưa CLOSED. |
+| RESOLVED → CLOSED | MANAGER, `POST .../:issueId/recheck` | `{expectedVersion:V,expectedItemVersion:I,result:'PASS',note}`; note không trống sau trim. Nguyên tử: Issue CLOSED, người/thời điểm duyệt, xóa returnReason; Item PASS, note, người/thời điểm kiểm tra. Cả hai version tăng. Giữ resolutionNote/resolvedAt của lần sửa. |
+| RESOLVED → OPEN | MANAGER, cùng API recheck | `{expectedVersion:V,expectedItemVersion:I,result:'FAIL',note,reason}`; **cả note và reason bắt buộc không trống**. Nguyên tử: Item vẫn FAIL và nhận note; Issue OPEN, lưu reason vào returnReason, xóa resolutionNote/resolvedAt và reviewedById/reviewedAt cũ. Cả hai version tăng. Đây là cùng Issue chưa đóng, không tạo Issue mới. |
+| Giao lại ở OPEN | MANAGER, `PATCH .../:issueId/assignee` | `{expectedVersion:V,assigneeId}`; người nhận mới là TECHNICIAN active. Không đổi status, tăng Issue.version; Item không đổi. Không vẽ self-transition mang nghĩa thoát/vào lại trạng thái. IN_PROGRESS/RESOLVED/CLOSED không được giao lại. |
+
+TECHNICIAN chỉ nhìn thấy và start/resolve Issue hiện được giao cho mình; sau giao lại, người cũ nhận 404. Service đọc lại ownership và Issue.version sau khi chờ khóa Inspection; khóa Item trước callback recheck rồi kiểm tra expectedItemVersion. Giao lại khóa User cũ/mới theo thứ tự UUID ổn định trước các khóa nghiệp vụ và kiểm tra lại assignee. Các ghi trong `write`/`mutateIssue` nằm trong transaction; version cũ hoặc trạng thái sai không được ghi đè. Mọi API còn cần JWT/User active/authVersion và không bị buộc đổi mật khẩu; actor sai vai trò trả 403, resource khác Project/người khác trả 404.
+
+Khi đã có Issue chưa CLOSED, `PUT result` không được đổi Item trực tiếp sang PASS/NOT_CHECKED hoặc gửi thêm `issue` để tạo lỗi trùng (409). MANAGER vẫn có thể ghi lại FAIL/note **không kèm issue mới**, với expectedVersion Item đúng; thao tác này tăng Item.version nhưng không đổi Issue/status/version. Vì vậy recheck luôn phải tải/kiểm tra cả version Item lẫn Issue.
+
+**CLOSED bất biến trong API Issue**, không có cạnh CLOSED → OPEN. Nếu về sau Item được đánh FAIL khi không còn Issue chưa đóng, MANAGER phải gửi mô tả/người nhận để tạo **Issue ID mới**, version Issue mới=1; Issue CLOSED và lịch sử trước giữ nguyên. Không vẽ nối CLOSED tới OPEN vì như vậy sẽ ngụ ý mở lại cùng bản ghi. Partial unique ở DB và transaction/khóa ở service giữ tối đa một Issue chưa CLOSED cho mỗi Item.
+
+### QA A4 ST2 và giới hạn
+
+Giữ style ST1: include local `style.iuml`, màu state giống nhau, note/legend/nội dung 18 px, tiêu đề 23 px. Render bằng PlantUML/Java/Graphviz local đã có, SVG và PNG 192 dpi; không cài dependency hoặc gửi source ra dịch vụ công khai. SVG viewBox **680 × 1079**; rộng 150 mm cho cao 238,01 mm, chữ nhỏ nhất **11,26 pt** theo công thức quy đổi phần trên, không cần tách hình.
+
+Đã mở SVG trong Chrome local, xem PNG và trang PDF QA A4 render bằng Poppler ngoài repo. Hình cách đỉnh trang 18 mm, lề ngang mỗi bên 30 mm, chừa dải chú thích cao 8 mm cách đáy 18 mm. Không thấy chữ/nhãn/đường nối chồng hoặc cắt/tràn ở kích thước này. PDF QA và script/screenshot không thuộc repo hoặc phạm vi stage. Chưa kiểm tra Word/in giấy; nếu đổi kích thước chèn/font/lề cần QA lại. Không chạy test/build/seed/DB hoặc xác minh runtime mới; chỉ thêm ST2 và cập nhật README, không thay ST1/ứng dụng/schema/dependency.

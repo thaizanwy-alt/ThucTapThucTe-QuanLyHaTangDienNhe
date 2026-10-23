@@ -1,0 +1,28 @@
+@startuml
+!include style.iuml
+top to bottom direction
+skinparam stateBackgroundColor #EFF5F8
+skinparam stateBorderColor #476579
+skinparam stateFontSize 18
+skinparam noteFontSize 18
+title ST2 - Vòng đời Issue và kiểm tra lại
+
+state OPEN
+state IN_PROGRESS
+state RESOLVED
+state CLOSED
+
+[*] --> OPEN : Ghi FAIL | MANAGER\n[chưa có lỗi chưa CLOSED;\ndescription, TECHNICIAN active]\n/ Tạo Issue + Item FAIL nguyên tử
+OPEN --> IN_PROGRESS : Bắt đầu | TECHNICIAN\n[đúng assignee hiện hành]
+IN_PROGRESS --> RESOLVED : Báo đã sửa | TECHNICIAN\n[đúng assignee; resolutionNote]\n/ Item vẫn FAIL
+RESOLVED --> CLOSED : Kiểm tra lại | MANAGER\n[PASS; note không trống]\n/ Issue CLOSED + Item PASS nguyên tử
+RESOLVED -left-> OPEN : Kiểm tra lại | MANAGER\n[FAIL; note + reason không trống]\n/ Issue OPEN + Item FAIL nguyên tử
+
+legend bottom
+  Ghi FAIL: expectedVersion của Item; start/resolve/giao lại: của Issue.
+  Recheck: expectedVersion Issue + expectedItemVersion, kiểm tra dưới khóa.
+  Giao lại: chỉ MANAGER khi OPEN; TECHNICIAN active; không đổi trạng thái.
+  CLOSED bất biến; FAIL về sau tạo Issue mới, không mở lại Issue cũ.
+  Một Item tối đa một Issue chưa CLOSED; dữ liệu bắt buộc: xem README.
+endlegend
+@enduml
