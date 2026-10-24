@@ -1,4 +1,4 @@
-# Sơ đồ kiến trúc, Use Case, ERD và trạng thái
+# Sơ đồ kiến trúc, Use Case, ERD, trạng thái, hoạt động và trình tự
 
 Mốc đối chiếu: `main`, HEAD `3fa0f5c`, ngày 22/10/2026. Đây là mô hình của chức năng **đã triển khai trong source**, không phải đề xuất mở rộng. Không kiểm tra server hoặc dữ liệu DB local trong lượt này.
 
@@ -13,7 +13,7 @@ Mốc đối chiếu: `main`, HEAD `3fa0f5c`, ngày 22/10/2026. Đây là mô h�
 | UC2b | Use Case MANAGER: quản lý thi công, kiểm tra và bàn giao | Task, checklist/Issue, evidence, acceptance/snapshot và export. | [Nguồn](src/UC2b.puml) · [SVG](rendered/UC2b.svg) · [PNG](rendered/UC2b.png) | A4 dọc; rộng 125 mm, cao 243,11 mm. |
 | UC3 | Use Case TECHNICIAN: tra cứu và xử lý công việc được giao | Quyền đọc danh mục/trace, Task/Issue của mình, evidence theo ownership, summary CONFIRMED và tài khoản mình. | [Nguồn](src/UC3.puml) · [SVG](rendered/UC3.svg) · [PNG](rendered/UC3.png) | A4 dọc; cao 249 mm, rộng 115,95 mm. |
 
-Nên đưa KT1, KT2, UC1 vào thân báo cáo; UC2a, UC2b, UC3 vào phần phân tích chi tiết hoặc phụ lục. Nhóm ERD, ST1, ST2 và ST3 bổ sung có mốc đối chiếu riêng ở cuối tài liệu; chưa tạo sơ đồ trạng thái tài khoản, activity, sequence hoặc DFD.
+Nên đưa KT1, KT2, UC1 vào thân báo cáo; UC2a, UC2b, UC3 vào phần phân tích chi tiết hoặc phụ lục. Nhóm ERD, ST1, ST2, ST3 và AC1/SQ1–SQ3 bổ sung có phần đối chiếu riêng ở cuối tài liệu; chưa tạo sơ đồ trạng thái tài khoản hoặc DFD.
 
 ## Kích thước chèn và QA A4
 
@@ -362,3 +362,72 @@ Hình lược endpoint chi tiết, bảng lựa chọn, số version cụ thể,
 Giữ style local ST1/ST2; không sửa `style.iuml` hoặc render hình trước. Nội dung/cạnh/legend/field của SVG là 18 px, tiêu đề 23 px; ST3b tiêu đề khung cũng 18 px. ViewBox ST3a **619 × 702**, ST3b **697 × 986**. Kích thước trong bảng dùng công thức quy đổi đã nêu, mỗi hình trên **một trang A4 dọc**, rộng 170 mm, lề ngang 20 mm, đỉnh hình 18 mm; dải chú thích trống cao 8 mm cách đáy 18 mm.
 
 Đã render SVG/PNG 192 dpi hoàn toàn local, mở từng SVG bằng Chrome, xem từng PNG cuối và đủ hai trang PDF QA ngoài repo qua Poppler. Không thấy cắt/đè chữ hoặc đường nối, không tràn vùng chú thích; chữ nhỏ nhất 14,01 pt (ST3a) và 12,44 pt (ST3b). QA/script/screenshot không thuộc repo và không phải báo cáo cuối. Chưa ghép Word/in giấy; đổi lề/font/kích thước phải QA lại. Lượt này chỉ tạo sáu file ST3a/ST3b và cập nhật README; không sửa ứng dụng/DB/dependency, không chạy test/build/seed hoặc kiểm chứng runtime mới.
+
+## AC1 và SQ1–SQ3 — phối hợp nghiệp vụ và các luồng trọng tâm
+
+Đối chiếu source hiện có ngày **23/10/2026**, không kiểm tra server/DB hoặc chạy lại test. Các hình mô tả chức năng đã triển khai; không thêm điều kiện liên thông giữa các module. Giữ style local của bộ hình trước, không sửa style dùng chung hoặc render lại hình cũ.
+
+| Mã | Chú thích đề xuất | Nguồn / SVG / PNG | Kích thước chèn A4 dọc đã QA | Vị trí đề xuất |
+| --- | --- | --- | --- | --- |
+| AC1 | Phối hợp thi công, kiểm tra và bàn giao theo ba vai trò | [Nguồn](src/AC1.puml) · [SVG](rendered/AC1.svg) · [PNG](rendered/AC1.png) | Cao **249 mm**, rộng **167,51 mm**; chữ nhỏ nhất **10,07 pt**. | Thân báo cáo, chương phân tích quy trình. |
+| SQ1 | Trình tự ghi FAIL, xử lý lỗi và kiểm tra lại | [Nguồn](src/SQ1.puml) · [SVG](rendered/SQ1.svg) · [PNG](rendered/SQ1.png) | Rộng **170 mm**, cao **209,18 mm**; chữ nhỏ nhất **10,25 pt**. | Thân báo cáo, chương thiết kế/xử lý nghiệp vụ. |
+| SQ2 | Trình tự xác nhận nghiệm thu và lưu snapshot | [Nguồn](src/SQ2.puml) · [SVG](rendered/SQ2.svg) · [PNG](rendered/SQ2.png) | Rộng **170 mm**, cao **245,16 mm**; chữ nhỏ nhất **10,80 pt**; lề ngang **20 mm**. | Thân báo cáo, giải thích tính nhất quán hồ sơ. |
+| SQ3 | Trình tự tạo, tải và dọn gói ZIP bàn giao | [Nguồn](src/SQ3.puml) · [SVG](rendered/SQ3.svg) · [PNG](rendered/SQ3.png) | Rộng **170 mm**, cao **230 mm**; chữ nhỏ nhất **10,20 pt**. | Phụ lục kỹ thuật; thân báo cáo chỉ dẫn chiếu. |
+
+Nếu giới hạn số hình trong thân báo cáo, ưu tiên AC1 và SQ1; có thể chuyển SQ2 cùng SQ3 sang phụ lục. Không cần tách sequence thành hai hình ở các kích thước trên. Cả nhóm vừa A4 dọc với lề ngang ít nhất 20 mm. SQ2 đã rút gọn/xuống dòng nhãn để rộng 170 mm, giữ font nguồn 18 px thay vì thu nhỏ toàn hình; nếu mẫu báo cáo dùng lề/kích thước khác phải QA lại.
+
+### Nguồn code đối chiếu
+
+| Nhóm | File làm nguồn |
+| --- | --- |
+| Project/danh mục và Task trong AC1 | `backend/src/projects/projects.controller.ts`, `projects.service.ts`, `project-area.entity.ts`, `project-system.entity.ts`, `dto/area.dto.ts`, `dto/system.dto.ts`; `backend/src/devices/`; `backend/src/tasks/tasks.controller.ts`, `tasks.service.ts`, `task-status.enum.ts`, `dto/task.dto.ts`; `backend/test/tasks.test.cjs`, `tasks.db.test.cjs`. |
+| Checklist/Issue — AC1, SQ1 | `backend/src/inspections/inspections.controller.ts`, `inspections.service.ts`, `inspection.enums.ts`, `inspection.entities.ts`, `dto/inspection.dto.ts`; `backend/test/inspections.test.cjs`, `inspections.db.test.cjs`. |
+| Nghiệm thu — AC1, SQ2 | `backend/src/acceptances/acceptances.controller.ts`, `acceptances.service.ts`, `acceptance.dto.ts`, `acceptance.entities.ts`; `backend/test/acceptances.test.cjs`, `acceptances.db.test.cjs`. |
+| Export — AC1, SQ3 | `backend/src/exports/exports.controller.ts`, `exports.service.ts`, `exports.render.ts`, `xlsx-process-slot.ts`, `xlsx.worker.ts`; `backend/test/exports.db.test.cjs`, `exports.worker.test.cjs`. |
+| Quyền và evidence dùng chung | `backend/src/auth/` (JWT/role guard); `backend/src/evidence/`; quyền đọc file ghim qua acceptance nằm trong `acceptances.service.ts`, nguồn snapshot/pin xuất ZIP nằm trong `exports.service.ts`. |
+
+Các đường dẫn rút gọn trong cùng ô giữ thư mục của file đầu tiên. Đã đọc controller/guard/service/DTO liên quan; test chỉ được dùng làm nguồn đối chiếu, không phải kết quả chạy mới.
+
+### AC1 — cách đọc và giới hạn liên thông
+
+Ba swimlane là **MANAGER, TECHNICIAN và Hệ thống**. Các bước khai báo/giao việc, thi công, chủ động tạo phiếu, chọn nguồn nghiệm thu và yêu cầu export thể hiện cách người dùng phối hợp thủ công. Không có job tự chuyển từ Task sang checklist hoặc acceptance. Thao tác kiểm tra/version/ghi kết quả/confirm/export vẫn do API kiểm soát.
+
+- Khối Task gom vòng thực hiện/gửi duyệt/duyệt hoặc trả; xem ST1 cho từng trạng thái. Task APPROVED **không tự tạo phiếu**, không phải điều kiện đủ hoặc điều kiện bắt buộc do acceptance kiểm tra. Không đổi Project.status theo kết quả Task hoặc hồ sơ.
+- MANAGER chủ động tạo phiếu và ghi từng Item. Khi cần tạo lỗi mới, FAIL + Issue OPEN được ghi nguyên tử. Vòng khắc phục trong AC1 gom quy trình chi tiết SQ1; recheck chỉ từ RESOLVED, không phải từ mọi trạng thái lỗi.
+- “Không còn lỗi chưa đóng” chưa bảo đảm đủ điều kiện nghiệm thu: phiếu không rỗng và mọi Item PASS cùng các điều kiện SQ2 vẫn được kiểm tra. Nhánh confirm không hợp lệ kết thúc lượt yêu cầu, giữ DRAFT; người dùng có thể hoàn thiện nguồn rồi thực hiện lượt mới.
+- Export sau confirm là kịch bản trình diễn bàn giao, không phải ràng buộc mọi export đều cần acceptance: PDF/ZIP cần hồ sơ CONFIRMED, còn hai Excel riêng xuất dữ liệu hiện tại theo Project. Không khẳng định toàn Project được nghiệm thu hoặc khách hàng đã ký.
+
+### SQ1 — FAIL, khắc phục và recheck
+
+Mỗi mũi tên từ actor là một request riêng, có xác thực/quyền hiện hành và version mới trả về sau thành công; hình lược các response trung gian. TECHNICIAN phải là assignee hiện hành. MANAGER ghi FAIL dùng `expectedVersion` của Item; khi chưa có Issue mở phải có mô tả không trống và TECHNICIAN active. Transaction cập nhật Item FAIL và tạo Issue OPEN; partial UNIQUE ngăn hai lỗi chưa CLOSED trên cùng Item. Không tự tạo lỗi trùng khi đã có Issue mở, không bỏ qua lỗi mở để đổi trực tiếp PASS/NOT_CHECKED.
+
+Start/resolve dùng `expectedVersion` của Issue, lần lượt OPEN → IN_PROGRESS → RESOLVED. Resolve bắt buộc `resolutionNote`, **Item vẫn FAIL**. Recheck nhận `expectedVersion` của Issue, `expectedItemVersion` của Item và `note` không trống; chỉ khi RESOLVED, kiểm tra cả hai version sau khóa. PASS đóng Issue và đổi Item PASS nguyên tử; FAIL bắt buộc thêm `reason`, trả Issue về OPEN và giữ Item FAIL. Cả hai version được tăng trong cùng transaction. Lỗi kiểm tra/ghi rollback, không đi tiếp các bước còn lại.
+
+Giao lại chỉ khi OPEN, không đổi trạng thái, được lược khỏi sequence để tập trung vòng khắc phục. CLOSED bất biến; nếu Item bị FAIL lại thì tạo Issue ID mới và giữ lịch sử cũ. Khung transaction là ranh giới ghi nghiệp vụ, không phải transaction kéo dài qua thời gian con người sửa lỗi.
+
+### SQ2 — xác nhận lại nguồn rồi lưu hồ sơ bất biến
+
+Readiness chỉ tư vấn, trả `version`, `sourceFingerprint`, blockers; confirm gửi `expectedVersion` và **`expectedSourceFingerprint`**. “fingerprint” trên hình là nhãn rút gọn, không phải tên field request mới. Confirm mở transaction khác và đọc/khóa lại hồ sơ DRAFT cùng nguồn, không dùng kết quả readiness làm bảo đảm.
+
+Các kiểm tra gom trên hình: lựa chọn đúng Project/System/phạm vi; có phiếu không rỗng; mọi Item PASS và mọi Issue CLOSED; version/fingerprint chuẩn hóa khớp; với replacement, predecessor vẫn CONFIRMED và chưa có replacement CONFIRMED trực tiếp. Fingerprint bao phủ dữ liệu thực sự đưa vào snapshot, không chỉ danh sách ID. Trình tự dừng tại kiểm tra lỗi: nguồn không hợp lệ không tiếp tục đọc file. Evidence tùy chọn; nếu có thì phải active, đọc được, đúng size và SHA-256. Nhánh file trên hình chỉ thực hiện khi có lựa chọn và nguồn hợp lệ.
+
+Snapshot, liên kết ghim evidence và status CONFIRMED được ghi trong cùng transaction. “Ghim” giữ tham chiếu nội bộ tới file hiện hữu, không copy sang archive mới; sau xác nhận xóa mềm evidence nguồn vẫn cho MANAGER đọc qua hồ sơ. Nội dung CONFIRMED không được lấy dữ liệu sống thay thế. Tạo replacement là tạo ID DRAFT khác; chỉ khi bản mới confirm thành công bản cũ mới được coi đã thay thế (xem ST3b). Không đổi status bản gốc thành enum mới, không tự đổi Project.status, không xác nhận chữ ký khách hàng.
+
+### SQ3 — phạm vi dữ liệu, integrity và vòng đời tác vụ
+
+“File / renderer local” gom thao tác file, PDF renderer, XLSX child process và archive trong backend local; **không phải một microservice**. Các bước chuẩn bị dừng ngay tại lỗi; nhánh lỗi cuối hình gom việc thoát/cleanup từ bất kỳ bước nào, không có nghĩa vẫn tạo ZIP sau khi kiểm tra thất bại.
+
+1. Chỉ MANAGER với JWT/quyền hiện hành; hồ sơ CONFIRMED đúng Project. Giữ slot chung ZIP/XLSX trước đọc/dựng dữ liệu lớn: tối đa một tác vụ/process, không hàng đợi, không tự lấy lại slot khi gọi renderer từ ZIP.
+2. Đọc hồ sơ/snapshot/pin, trạng thái replacement hiện tại và hai graph inventory/đấu nối trong **cùng transaction READ ONLY REPEATABLE READ/EntityManager**. Kết thúc transaction trước render/hash/archive. Hai Excel dùng cùng graph/lượt đọc, không gọi lại nguồn ở hai thời điểm. Thời điểm đọc hiện tại được ghi riêng với thời điểm snapshot nghiệm thu; `transaction_timestamp()` là lúc bắt đầu transaction, không timestamp chính xác thiết lập MVCC snapshot.
+3. PDF dùng snapshot lịch sử; nhãn đã thay thế là thông tin hiện tại tách riêng. Hai XLSX là dữ liệu hiện tại. Hash artifact đã tạo; copy từng evidence ghim sang staging đồng thời đo size/SHA-256 và so với snapshot. Chấp nhận file nguồn đã xóa mềm nếu đã ghim, không tự thêm evidence khác. Thiếu/sai integrity hủy cả gói; chỉ archive bản staging đã xác minh, không đọc lại file nguồn để đóng ZIP.
+4. Manifest ghi metadata snapshot và hash/size/path của đúng artifact/evidence đưa vào gói; không tự hash manifest. Tên entry do server sinh, không dùng tên gốc làm đường dẫn, không lộ storageKey/đường dẫn nội bộ. ZIP hoàn tất trước headers; tối đa 50 evidence, tổng byte chưa nén (kể cả manifest) và ZIP đều tối đa 200 MiB, deadline toàn tác vụ 120 giây. Giới hạn riêng PDF/XLSX vẫn áp dụng, không cắt dữ liệu.
+5. Lỗi trước headers chỉ trả lỗi khi client còn nối; sau headers phải ngắt luồng, không gửi JSON/status mới. Bận 503 + Retry-After; vượt giới hạn 413; deadline 504; storage lỗi 503; file ghim thiếu/sai integrity 409. Abort/deadline hủy stream/worker/archive tương ứng và chờ đóng trước cleanup. Không coi Promise.race là đã hủy công việc.
+6. File staging và artifact trung gian được dọn khi chuẩn bị xong/lỗi; ZIP cuối cùng và slot giữ đến khi gửi xong hoặc cleanup lỗi/abort. Release idempotent, không trả slot khi stream còn gửi. Kết nối/pool export riêng được đóng khi abort; startup/server timeout hữu hạn là giới hạn cuối cho query PostgreSQL, **không bảo đảm query server dừng tức thời**, không signaling PID. Không tác động pool nghiệp vụ hoặc xóa evidence nguồn.
+
+### Render lại và kết quả QA nhóm AC1/SQ
+
+Dùng lệnh PlantUML local ở phần render chung, lần lượt truyền `docs/diagrams/src/AC1.puml`, `SQ1.puml`, `SQ2.puml`, `SQ3.puml` (các tên sau cùng thư mục). SVG dùng `-tsvg`; PNG dùng `-tpng -Sdpi=192`, UTF-8, output `../rendered`, include chỉ `style.iuml` local. Không gửi source ra dịch vụ render hoặc cài dependency.
+
+Đã mở từng SVG bằng Chrome local, xem từng PNG và đủ **bốn trang PDF QA A4** render bằng Poppler. Sau đó chỉnh riêng nhãn SQ2 và cập nhật PDF bốn trang; đã xem lại SVG/PNG và trang A4 SQ2 cuối. SVG viewBox hiện tại lần lượt **849 × 1262**, **846 × 1041**, **803 × 1158**, **850 × 1150**; text/legend nhỏ nhất trong SVG là 18 px, tiêu đề 23 px. Quy đổi theo kích thước chèn trong bảng cho chữ nhỏ nhất **10,07 / 10,25 / 10,80 / 10,20 pt**. Mỗi hình giữ tỉ lệ, đỉnh cách mép giấy 18 mm, dải chú thích cao 8 mm cách đáy 18 mm; không thấy cắt chữ, đè nhãn/đường nối hoặc tràn dải chú thích. SQ2 kết thúc cách đáy khoảng 33,84 mm, còn khoảng 7,84 mm trước dải chú thích.
+
+PDF xem trước bốn hình, script và screenshot QA nằm **ngoài repo**; không phải báo cáo cuối. Chưa ghép Word hoặc in giấy; cần giữ kích thước/lề đã QA, không dùng auto-fit làm chữ nhỏ hơn 10 pt. Chỉ thêm bốn nguồn PlantUML, tám SVG/PNG và cập nhật danh mục này; không sửa ứng dụng/DB/dependency, không chạy test/build/seed và không thao tác staging.

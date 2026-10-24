@@ -1,0 +1,39 @@
+@startuml
+!include style.iuml
+skinparam sequenceMessageAlign center
+skinparam sequenceMessageFontSize 18
+skinparam sequenceParticipantFontSize 18
+skinparam sequenceGroupFontSize 18
+skinparam sequenceGroupHeaderFontSize 18
+skinparam noteFontSize 18
+hide footbox
+skinparam padding 2
+skinparam sequenceMessagePadding 2
+title SQ3 - Xuất gói ZIP bàn giao
+actor MANAGER as M
+participant "API\nExport" as A
+database PostgreSQL as D
+participant "File / renderer\nlocal" as F
+M -> A : Tải ZIP (Project, hồ sơ)
+A -> A : JWT / MANAGER;\nslot chung ZIP / XLSX
+group Đọc trong cùng snapshot DB
+  A -> D : Transaction chỉ đọc,\nREPEATABLE READ:\nhồ sơ, pin, hai graph cùng Project
+  D --> A : Dữ liệu; kết thúc transaction
+end
+A -> F : PDF: snapshot;\n2 XLSX: dữ liệu hiện tại
+A -> F : Hash artifact; stage evidence;\nkiểm tra size / SHA-256
+A -> F : Manifest + artifact + staging;\nđóng ZIP an toàn / có giới hạn
+F --> A : ZIP hoàn tất trước headers
+alt Thành công và client còn kết nối
+  A --> M : Headers + luồng ZIP
+else Lỗi / deadline / client ngắt
+  A --> M : Trước headers: lỗi nếu còn nối;\nsau headers: ngắt luồng
+end
+A -> F : Finally: dừng, chờ đóng nếu cần;\ndọn file tạm sở hữu
+A -> A : Trả slot một lần sau khi\ngửi xong / cleanup lỗi, abort
+legend bottom
+  PDF: snapshot lịch sử; hai XLSX: cùng lượt đọc hiện tại.
+  Thiếu / sai hash file: hủy toàn gói; không lấy thêm evidence ngoài hồ sơ.
+  Bận: 503; quá giới hạn: 413; deadline: 504; lỗi storage: 503.
+endlegend
+@enduml

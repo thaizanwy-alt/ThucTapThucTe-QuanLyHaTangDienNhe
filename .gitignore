@@ -7,3 +7,37 @@ dist/
 *.log
 *.tsbuildinfo
 .DS_Store
+
+# Local runtime data and backups (keep on disk; never publish with source).
+storage/
+evidence-storage/
+backup/
+backups/
+local-data/
+*.dump
+*.dump.gz
+*.backup
+*.sql.gz
+/database.sql
+/dump.sql
+*.sqlite
+*.sqlite3
+*.db
+
+# Private keys and personal verification output.
+*.pem
+*.key
+*.p12
+*.pfx
+__pycache__/
+*.pyc
+coverage/
+playwright-report/
+test-results/
+/qa/
+/artifacts/
+
+# Machine-specific presentation data operations; keep these local scripts on disk.
+/backend/scripts/presentation-data.cjs
+/backend/scripts/presentation-inventory.cjs
+/backend/scripts/presentation-verify.cjs

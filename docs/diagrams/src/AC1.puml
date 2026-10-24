@@ -1,0 +1,46 @@
+@startuml
+!include style.iuml
+skinparam activityBackgroundColor #EFF5F8
+skinparam activityBorderColor #476579
+skinparam activityFontSize 18
+skinparam activityDiamondFontSize 18
+skinparam swimlaneTitleFontSize 18
+skinparam noteFontSize 18
+skinparam padding 2
+title AC1 - Phối hợp thi công, kiểm tra và bàn giao
+|MANAGER|
+start
+:Khai báo công trình;\ndanh mục và giao Task;
+|TECHNICIAN|
+:Bắt đầu, thực hiện\nvà gửi duyệt Task;
+|MANAGER|
+:Duyệt / trả Task; tạo phiếu\nvà ghi kết quả chủ động;
+|Hệ thống|
+while (Còn lỗi chưa đóng?) is (có)
+  |TECHNICIAN|
+  :Bắt đầu / khắc phục\nvà báo đã sửa;
+  |MANAGER|
+  :Kiểm tra lại: PASS / FAIL;
+  |Hệ thống|
+  :PASS: CLOSED + Item PASS\nFAIL: OPEN + Item FAIL;
+endwhile (không)
+|MANAGER|
+:Lập nháp, chọn nguồn;\nxem readiness và gửi confirm;
+|Hệ thống|
+if (Confirm hợp lệ?) then (có)
+  :CONFIRMED;\nsnapshot + ghim;
+else (không)
+  :Từ chối;\ngiữ DRAFT;
+  stop
+endif
+|MANAGER|
+:Yêu cầu xuất bàn giao;
+|Hệ thống|
+:Kiểm tra quyền / phạm vi;\nxuất PDF / Excel / ZIP;
+stop
+legend bottom
+  Mũi tên là phối hợp thủ công; không tự nối các module.
+  APPROVED không tự tạo phiếu / cho phép nghiệm thu.
+  Confirm lỗi: giữ DRAFT, hoàn thiện nguồn rồi thử lại.
+endlegend
+@enduml

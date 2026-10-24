@@ -1,5 +1,30 @@
 # Trạng thái bàn giao
 
+## Dữ liệu trình bày local — 24/10/2026
+
+DB local hiện có **đúng hai công trình** sau lượt chuẩn bị dữ liệu có backup/restore kiểm chứng. Bảng CT-DEMO-ELV-01 và các số liệu ở phần dưới là lịch sử, không còn là dữ liệu hiện hành. **Không chạy seed:demo cũ để reset**: lệnh đó có thể tạo lại công trình CT-DEMO ngoài bộ hai công trình này.
+
+| Nội dung | KCN01 — Khu công nghiệp | KCC01 — Khu chung cư |
+| --- | --- | --- |
+| Project | COMPLETED (đặt chủ đích qua API) | IN_PROGRESS |
+| Danh mục | 6 Area (2 FLOOR, 4 ROOM), 3 System, 21 Device gồm 2 rack | Cùng số lượng; tên khu vực theo sảnh/hành lang/căn hộ |
+| Rack | RACK-CORE MAIN 42U, RACK-T02 SUB 24U; 11 thiết bị xếp U, PDU ZERO_U, 0 chưa xếp | MAIN 42U/SUB 24U; 9 xếp U, 1 ZERO_U, SHELF-CORE và ODF-T02 chưa xếp |
+| Cổng/dây/hồ sơ mạng | 23 port, 11 connection, 4 profile CAMERA/AP | 23 port, 10 connection, 4 profile CAMERA/AP |
+| Task | 5 APPROVED | CV-LAN-01 ASSIGNED; CV-WIFI-01 IN_PROGRESS; CV-CAM-01 SUBMITTED; CV-CAM-02 RETURNED; CV-LAN-02 APPROVED |
+| Kiểm tra/Issue | 3 phiếu, 9 Item PASS; 1 Issue CLOSED giữ lịch sử | 6 phiếu/18 Item; 2 phiếu đạt, 1 chưa kiểm tra, 3 đang kiểm tra/chưa đạt; Issue đủ OPEN/IN_PROGRESS/RESOLVED/CLOSED |
+| Nghiệm thu | NT-LAN-01, NT-WIFI-01, NT-CAM-01 CONFIRMED hiện hành, phạm vi từng phiếu được chọn | NT-CAM-CHO DRAFT còn blocker; NT-LAN-CHO DRAFT đủ điều kiện; NT-LAN-01 → NT-LAN-02 CONFIRMED (bản 01 đã thay thế) |
+| Evidence | 10 metadata active (8 hình riêng, 1 hình camera gắn thêm vào lịch sử lỗi, 1 PDF) | 14 metadata: 13 active, 1 xóa mềm; hình camera liên quan được gắn theo các Issue để thử quyền/trạng thái |
+
+Mã nên mở: CAM-DIRECT, CAM-PANEL, CAM-OUTLET (ba đường đến switch); OUT-LOBBY; OUT-PENDING (KCC thiếu dây nhảy, KCN đã đủ đường). `complete` chỉ là đường dây đã khai báo tới switch, không giám sát mạng thực. KCC: KT-WIFI-CHO chưa kiểm tra, KT-LAN-DAT đạt; KT-CAM-MO/SUA/CHO/DAT lần lượt có Issue OPEN/IN_PROGRESS/RESOLVED/CLOSED. Có việc ASSIGNED/RETURNED và Issue OPEN để giao lại giữa hai TECHNICIAN hiện có; cả hai đã login được, active và không cần đổi mật khẩu. Không tạo/reset tài khoản.
+
+Backup trước cleanup: `D:\ELV-Presentation-Backups\elv-2026-10-23T17-49-54.683Z-RO0VYz` (ngoài repo, DB + toàn storage + manifest/verification). Dump SHA-256: `4b1a12210a2be9b8d25167ce9d24563520ed59351f77a4c6c853f1965ce5c2b0`. Restore DB/storage tạm đã khớp counts/fingerprint/sequence/hash file, login hai vai trò, đọc file ghim đã xóa mềm, PDF/ZIP/XLSX; DB/runtime restore đã dọn. Xác nhận cluster `7628257575938021648`, UTF8, 14 migration trước thao tác ghi. Cleanup theo đúng bốn ID đã kiểm kê, transaction/FK, giữ hai ID Project phù hợp và tạo lại danh mục/workflow qua API; không disable trigger/constraint hoặc giả trạng thái bằng SQL. Hai Project thử cùng toàn bộ dữ liệu nghiệp vụ mẫu cũ đã được loại khỏi DB sau backup; toàn bộ 4 User (kể cả hash, role, active và thông tin bảo mật) và 14 migration không đổi. **61 file storage cũ giữ nguyên byte/hash**, chưa purge.
+
+Script vận hành chỉ giữ local, **không công bố trong GitHub**: `presentation-inventory.cjs` (chỉ đọc), `presentation-data.cjs` (tái sử dụng DEVICE_SPECS/RACK_LAYOUT/PLACEMENT từ seed cũ; không gọi main seed cũ), `presentation-verify.cjs` (chỉ đọc API/DB và xuất artifact kiểm chứng). Cả ba được ignore đúng từng đường dẫn; bản clone không có script/fixture local này. Cấu hình checkpoint/ảnh/QA ở `PRESENTATION_DATA_DIR` tuyệt đối trên D, ngoài repo/storage; dữ liệu lượt này nằm `D:\ELV-Presentation-Data\20261024`. Không ghi token/credentials vào checkpoint. Mỗi lần chạy nạp credentials local; trước ghi so fingerprint toàn bộ DB với checkpoint, lệch thì dừng, không ghi đè. Prepare chỉ chạy một lần sau backup đã kiểm chứng; chạy lại prepare bị từ chối. Đã ép ngắt sau cấu hình MAIN rồi chạy tiếp thành công; chạy lại seed hoàn chỉnh **0 thao tác ghi**. Nếu mất kết quả request trong khoảng chưa chốt checkpoint, script dừng với pending để đối soát, không mù quáng phát lại; chưa fault-inject crash/mất mạng trong khoảng đó.
+
+Ảnh là **8 minh họa kỹ thuật local khác nhau mỗi công trình**, raster PNG 1100×760 từ SVG do script dựng (tủ, switch, panel, ổ mạng, camera, AP, nhãn cáp), không phải ảnh hiện trường. Caption ghi rõ minh họa; PDF tiếng Việt có nội dung ghi nhận mẫu, không có chữ ký khách hàng. Không tải ảnh/công cụ hàng loạt lên C. Đã mở xem mẫu ảnh, PDF minh chứng và PDF nghiệm thu render; chưa kiểm chứng thi công/đo đạc ngoài thực địa.
+
+Kiểm chứng lượt dữ liệu này: API thật trace/layout/network profile/workflow/readiness; nội dung PDF, cả hai XLSX và ZIP của **cả hai Project**, mở ZIP và đối chiếu mọi size/SHA-256/manifest, file ghim đọc được. 50 FK được truy vấn kiểm tra, 0 bản ghi mồ côi; không đồng nghĩa file disk không còn mồ côi (file cũ chủ đích giữ lại). Chrome chỉ đọc cả hai Project/sáu mục, tổng quan 390 px; không chạy hết mutation UI hoặc đẩy tiếp các fixture dở dang. Backend/Vite được để chạy để trình bày. Không chạy full suite, migration, seed tài khoản hoặc build ứng dụng trong lượt này; không sửa application/schema/frontend và không quản lý Git.
+
 Cập nhật tài liệu ngày 19/10/2026 trên `main 9bef18b`. Hướng dẫn cài/chạy: [README.md](../README.md); kịch bản bàn giao/trình diễn: [DEMO_GUIDE.md](DEMO_GUIDE.md). Các số liệu bên dưới gắn với từng lượt kiểm chứng, không phải truy vấn DB hiện tại.
 
 ## Bàn giao trình diễn

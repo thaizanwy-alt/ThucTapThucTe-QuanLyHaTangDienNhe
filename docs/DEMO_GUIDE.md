@@ -1,5 +1,7 @@
 # Hướng dẫn bàn giao và trình diễn
 
+> Cập nhật dữ liệu local 24/10/2026: hiện chỉ có **KCN01 — Khu công nghiệp** (COMPLETED) và **KCC01 — Khu chung cư** (IN_PROGRESS). Dùng bảng mã/trạng thái hiện hành tại đầu [STATUS](STATUS.md), không tìm CT-DEMO-ELV-01 theo kịch bản lịch sử bên dưới và không chạy seed:demo cũ để reset. Các bước bật môi trường/quyền/backup vẫn cần tuân thủ; tên fixture bên dưới là lịch sử, không phải dữ liệu đang có.
+
 Soạn ngày 19/10/2026 trên `main`, HEAD `9bef18b`. Đối chiếu code, seed và [STATUS](STATUS.md); **không truy vấn DB, chạy seed hoặc xác minh lại giao diện trong lượt soạn này**. Mã bên dưới lấy từ fixture và kết quả đã ghi, không suy trạng thái từ tên. Trước buổi demo phải mở UI xác nhận dữ liệu còn đúng; nếu lệch, không tự reset.
 
 ## 1. Chuẩn bị và bật đúng môi trường

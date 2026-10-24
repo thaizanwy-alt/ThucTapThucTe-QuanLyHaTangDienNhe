@@ -1,0 +1,39 @@
+@startuml
+!include style.iuml
+skinparam sequenceMessageAlign center
+skinparam sequenceMessageFontSize 18
+skinparam sequenceParticipantFontSize 18
+skinparam sequenceGroupFontSize 18
+skinparam sequenceGroupHeaderFontSize 18
+skinparam noteFontSize 18
+hide footbox
+skinparam padding 2
+skinparam sequenceMessagePadding 2
+title SQ1 - FAIL, khắc phục và kiểm tra lại
+actor MANAGER as M
+actor TECHNICIAN as T
+participant "API\nChecklist / Issue" as A
+database PostgreSQL as D
+M -> A : FAIL: version Item, mô tả, assignee
+A -> D : Kiểm tra version; transaction\nItem FAIL + Issue OPEN
+T -> A : Start (version Issue)
+A -> D : Kiểm tra ownership / version;\nOPEN -> IN_PROGRESS
+T -> A : Resolve\n(version Issue, resolutionNote)
+A -> D : IN_PROGRESS -> RESOLVED;\nItem vẫn FAIL (transaction)
+M -> A : Recheck (PASS / FAIL, note,\nversion Issue + version Item)
+group Transaction recheck
+  A -> D : Khóa; đúng hai version, RESOLVED
+  alt PASS
+    A -> D : Issue CLOSED + Item PASS
+  else FAIL: bắt buộc reason
+    A -> D : Issue OPEN + Item FAIL
+  end
+  D --> A : Commit; tăng cả hai version
+end
+A --> M : Kết quả mới
+legend bottom
+  Mỗi action cần quyền; TECHNICIAN phải là assignee hiện hành.
+  Các action trả version mới; lỗi: rollback, không tiếp tục luồng.
+  CLOSED giữ lịch sử; FAIL về sau tạo Issue mới.
+endlegend
+@enduml

@@ -1,0 +1,39 @@
+@startuml
+!include style.iuml
+skinparam sequenceMessageAlign center
+skinparam sequenceMessageFontSize 18
+skinparam sequenceParticipantFontSize 18
+skinparam sequenceGroupFontSize 18
+skinparam sequenceGroupHeaderFontSize 18
+skinparam noteFontSize 18
+hide footbox
+skinparam padding 2
+skinparam sequenceMessagePadding 2
+title SQ2 - Xác nhận hồ sơ nghiệm thu
+actor MANAGER as M
+participant "API\nNghiệm thu" as A
+database PostgreSQL as D
+participant "Evidence storage\nlocal" as F
+M -> A : Readiness\n(hồ sơ DRAFT)
+A -> D : Đọc / khóa nguồn;\ntransaction riêng
+A --> M : Version, fingerprint,\nblockers
+M -> A : Confirm\n(expectedVersion,\nfingerprint)
+group Transaction confirm
+  A -> D : Khóa DRAFT / nguồn;\nversion và phạm vi
+  A -> A : So fingerprint; phiếu PASS,\nlỗi CLOSED, replacement
+  A -> F : Nguồn hợp lệ: đọc file chọn;\nkiểm tra size / SHA-256
+  F --> A : Kết quả kiểm tra (nếu có file)
+  alt Tất cả kiểm tra hợp lệ
+      A -> D : Snapshot + ghim evidence\n+ CONFIRMED; commit nguyên tử
+      A --> M : CONFIRMED;\nsnapshot
+    else Nguồn / file không hợp lệ
+      A -> D : Rollback
+      A --> M : Từ chối; tải lại nguồn
+  end
+end
+legend bottom
+  Readiness chỉ tư vấn; confirm kiểm tra lại dưới khóa.
+  Ghim file hiện hữu; snapshot không thay bằng dữ liệu sống.
+  Không tự đổi Project.status hoặc xác nhận chữ ký khách hàng.
+endlegend
+@enduml
